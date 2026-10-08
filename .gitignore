@@ -1,0 +1,5 @@
+# 원본 데이터 스냅샷/미리보기 결과는 개인정보라 커밋하지 않음
+*.snapshot.json
+preview*.html
+.clasprc.json
+node_modules/
