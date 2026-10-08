@@ -5,13 +5,53 @@
  * 원본 형태: 1행=프로그램명, 2행=코치, 3행~=레슨 날짜("YYYY-MM-DD", 뒤에 "+" 또는 메모가 붙을 수 있음).
  */
 
-var LESSON_HEADERS = ['lesson_id', 'date', 'weekday', 'program_id', 'program', 'coach', 'plus_mark', 'note', 'source_cell'];
-var PROGRAM_HEADERS = ['program_id', 'program', 'sport', 'detail', 'coach', 'memo', 'first_date', 'last_date', 'lesson_count', 'status'];
-var ISSUE_HEADERS = ['level', 'type', 'program', 'source_cell', 'original', 'action'];
+/**
+ * DB 스키마. key 는 변환 결과 객체의 필드, label 은 시트 헤더.
+ * formula 가 있는 컬럼은 헤더 셀에 배열 수식을 넣어 값이 자동 계산된다(데이터 쓰기 시 비워 둔다).
+ */
+var LESSON_COLUMNS = [
+  { key: 'lesson_id', label: '레슨ID' },
+  { key: 'date', label: '날짜' },
+  { key: 'weekday', label: '요일', formula: '={"요일";ARRAYFORMULA(IF(LEN(B2:B),CHOOSE(WEEKDAY(B2:B),"일","월","화","수","목","금","토"),))}' },
+  { key: 'program_id', label: '프로그램ID' },
+  { key: 'program', label: '프로그램' },
+  { key: 'student', label: '대상', formula: '={"대상";ARRAYFORMULA(IF(LEN(D2:D),IFERROR(VLOOKUP(D2:D,programs!A:E,5,FALSE)&"",""),))}' },
+  { key: 'coach', label: '코치' },
+  { key: 'payment', label: '결제' },
+  { key: 'note', label: '메모' },
+  { key: 'status', label: '상태', formula: '={"상태";ARRAYFORMULA(IF(LEN(D2:D),IFERROR(VLOOKUP(D2:D,programs!A:H,8,FALSE)&"",""),))}' },
+  { key: 'source_cell', label: '원본셀' }
+];
+
+/** programs 의 집계 컬럼은 행마다 수식({r} = 행 번호) */
+var PROGRAM_COLUMNS = [
+  { key: 'program_id', label: '프로그램ID' },
+  { key: 'program', label: '프로그램' },
+  { key: 'sport', label: '종목' },
+  { key: 'detail', label: '세부' },
+  { key: 'student', label: '대상' },
+  { key: 'coach', label: '코치' },
+  { key: 'memo', label: '메모' },
+  { key: 'status', label: '상태' },
+  { key: 'first_date', label: '첫 레슨', rowFormula: '=IF($K{r}=0,"",MINIFS(lessons!$B:$B,lessons!$D:$D,$A{r}))' },
+  { key: 'last_date', label: '마지막 레슨', rowFormula: '=IF($K{r}=0,"",MAXIFS(lessons!$B:$B,lessons!$D:$D,$A{r}))' },
+  { key: 'lesson_count', label: '레슨 수', rowFormula: '=COUNTIF(lessons!$D:$D,$A{r})' },
+  { key: 'payment_count', label: '결제 횟수', rowFormula: '=COUNTIFS(lessons!$D:$D,$A{r},lessons!$H:$H,TRUE)' }
+];
+
+var ISSUE_COLUMNS = [
+  { key: 'level', label: '구분' },
+  { key: 'type', label: '유형' },
+  { key: 'program', label: '프로그램' },
+  { key: 'source_cell', label: '원본셀' },
+  { key: 'original', label: '원본값' },
+  { key: 'action', label: '처리' }
+];
+
+var STATUS_VALUES = ['진행중', '종료'];
 
 var WEEKDAYS_KO = ['일', '월', '화', '수', '목', '금', '토'];
 var DATE_CELL_RE = /^(\d{4})-(\d{2})-(\d{2})\s*(\+)?\s*(.*)$/;
-var INACTIVE_AFTER_DAYS = 60;
 
 function columnLetter_(index) {
   var s = '';
@@ -39,8 +79,11 @@ function weekdayKo_(iso) {
   return WEEKDAYS_KO[new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay()];
 }
 
-function daysBetween_(isoA, isoB) {
-  return Math.round((Date.parse(isoB) - Date.parse(isoA)) / 86400000);
+/** 프로그램명에 대상이 드러난 경우만 채우고 나머지는 수기 입력 */
+function guessStudent_(name) {
+  if (/엄빠/.test(name)) return '엄빠';
+  if (/준희/.test(name)) return '준희';
+  return '';
 }
 
 /** "야구(서구 대회)" → { sport: "야구", detail: "서구 대회" } */
@@ -76,8 +119,9 @@ function normalizeLegacy(values, opts) {
       sport: parts.sport,
       detail: parts.detail,
       coach: String(coachRow[c] || '').trim(),
+      student: guessStudent_(name),
       memo: [],
-      ended: false
+      status: ''
     };
     programs.push(program);
 
@@ -86,13 +130,13 @@ function normalizeLegacy(values, opts) {
     for (var r = 2; r < values.length; r++) {
       var raw = String((values[r] || [])[c] || '').trim();
       if (!raw) continue;
-      var cell = "'" + sheetName + "'!" + columnLetter_(c) + (r + 1);
+      var cell = sheetName + '!' + columnLetter_(c) + (r + 1);
       var m = DATE_CELL_RE.exec(raw);
 
       if (!m) {
         // 날짜가 아닌 값: 추가 코치/대상 정보 등 → 프로그램 메모로 보존
         program.memo.push(raw);
-        issues.push({ level: 'info', type: '날짜 아님→메모', program: name, source_cell: cell, original: raw, action: '프로그램 memo로 이동' });
+        issues.push({ level: 'info', type: '날짜 아님→메모', program: name, source_cell: cell, original: raw, action: '프로그램 메모로 이동' });
         continue;
       }
 
@@ -123,14 +167,14 @@ function normalizeLegacy(values, opts) {
       prevIso = iso;
 
       var note = (m[5] || '').trim();
-      if (/종료/.test(note)) program.ended = true;
+      if (/종료/.test(note)) program.status = '종료';
       rawLessons.push({
         date: iso,
         weekday: weekdayKo_(iso),
         program_id: program.program_id,
         program: name,
         coach: program.coach,
-        plus_mark: m[4] ? 'Y' : '',
+        payment: !!m[4],
         note: note,
         source_cell: cell
       });
@@ -151,29 +195,50 @@ function normalizeLegacy(values, opts) {
     p.lesson_count = mine.length;
     p.first_date = mine.length ? mine[0].date : '';
     p.last_date = mine.length ? mine[mine.length - 1].date : '';
-    if (!mine.length) p.status = '기록없음';
-    else if (p.ended || (today && daysBetween_(p.last_date, today) > INACTIVE_AFTER_DAYS)) p.status = '종료';
-    else p.status = '진행중';
+    p.payment_count = mine.filter(function (l) { return l.payment; }).length;
     p.memo = p.memo.join(', ');
-    delete p.ended;
   });
 
   return { programs: programs, lessons: lessons, issues: issues };
 }
 
-/** 객체 배열 → 헤더 순서대로 2차원 배열 */
-function toRows(objects, headers) {
-  return [headers].concat(objects.map(function (o) {
-    return headers.map(function (h) { return o[h] === undefined ? '' : o[h]; });
+/**
+ * 객체 배열 → 시트에 쓸 2차원 배열(헤더 포함).
+ * formula 컬럼은 헤더에 배열 수식, 데이터는 null(쓰지 않음). rowFormula 컬럼은 행별 수식.
+ * @param {number=} firstRow 첫 데이터 행 번호(기본 2)
+ */
+function toSheetRows(objects, columns, firstRow) {
+  firstRow = firstRow || 2;
+  var header = columns.map(function (c) { return c.formula || c.label; });
+  return [header].concat(objects.map(function (o, i) {
+    return columns.map(function (c) {
+      if (c.formula) return null;
+      if (c.rowFormula) return c.rowFormula.replace(/\{r\}/g, String(firstRow + i));
+      var v = o[c.key];
+      return v === undefined ? '' : v;
+    });
+  }));
+}
+
+/** 미리보기용: 수식 대신 계산된 값으로 채운 2차원 배열 */
+function toPreviewRows(objects, columns) {
+  return [columns.map(function (c) { return c.label; })].concat(objects.map(function (o) {
+    return columns.map(function (c) {
+      var v = o[c.key];
+      return v === true ? '☑' : v === false ? '☐' : v === undefined ? '' : v;
+    });
   }));
 }
 
 if (typeof module !== 'undefined') {
   module.exports = {
     normalizeLegacy: normalizeLegacy,
-    toRows: toRows,
-    LESSON_HEADERS: LESSON_HEADERS,
-    PROGRAM_HEADERS: PROGRAM_HEADERS,
-    ISSUE_HEADERS: ISSUE_HEADERS
+    toSheetRows: toSheetRows,
+    toPreviewRows: toPreviewRows,
+    weekdayKo: weekdayKo_,
+    LESSON_COLUMNS: LESSON_COLUMNS,
+    PROGRAM_COLUMNS: PROGRAM_COLUMNS,
+    ISSUE_COLUMNS: ISSUE_COLUMNS,
+    STATUS_VALUES: STATUS_VALUES
   };
 }

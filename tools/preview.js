@@ -39,15 +39,15 @@ th{background:var(--head);position:sticky;top:0}.note{background:var(--warnbg);c
 <div class="kpi"><b>${r.programs.length}</b><span>프로그램</span></div>
 <div class="kpi"><b>${r.lessons.length}</b><span>레슨 기록</span></div>
 <div class="kpi"><b>${r.issues.filter((i) => i.level !== 'info').length}</b><span>보정/제외</span></div>
-<div class="kpi"><b>${r.programs.filter((p) => p.status === '진행중').length}</b><span>진행중 프로그램</span></div>
+<div class="kpi"><b>${r.lessons.filter((l) => l.payment).length}</b><span>결제 표시</span></div>
 </div>
 <h2>탭 1 · programs (프로그램 마스터)</h2>
-<p>first_date / last_date / lesson_count 는 실제 시트에서 수식으로 들어가 새 레슨 추가 시 자동 갱신돼요. status 는 마지막 레슨 후 60일 경과 또는 "종료" 메모 기준 추정값이에요.</p>
-${table(n.toRows(r.programs, n.PROGRAM_HEADERS), 'short')}
+<p>첫/마지막 레슨, 레슨 수, 결제 횟수는 수식이라 새 레슨을 추가하면 자동으로 갱신돼요. 대상과 상태는 직접 입력하는 칸이고, 상태를 바꾸면 lessons 탭의 해당 레슨 전체에 반영돼요.</p>
+${table(n.toPreviewRows(r.programs, n.PROGRAM_COLUMNS), 'short')}
 <h2>탭 2 · migration_issues (정제 내역)</h2>
-${table(n.toRows(r.issues, n.ISSUE_HEADERS), 'short')}
+${table(n.toPreviewRows(r.issues, n.ISSUE_COLUMNS), 'short')}
 <h2>탭 3 · lessons (레슨 1건 = 1행, 날짜순)</h2>
-${table(n.toRows(r.lessons, n.LESSON_HEADERS))}
+${table(n.toPreviewRows(r.lessons.map((l) => ({ ...l, student: r.programs.find((p) => p.program_id === l.program_id).student, status: r.programs.find((p) => p.program_id === l.program_id).status })), n.LESSON_COLUMNS))}
 </body></html>`;
 
 fs.writeFileSync(out, html);
