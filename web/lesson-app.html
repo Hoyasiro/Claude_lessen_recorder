@@ -67,7 +67,7 @@ h2.sec { font-size: 13px; font-weight: 600; color: var(--ink-2); letter-spacing:
 .field { display: grid; gap: 6px; }
 .field > label, .field > .lab { font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .date-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-input[type="date"], input[type="text"], input[type="number"], select { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 44px; width: 100%; min-width: 0; }
+input[type="date"], input[type="time"], input[type="text"], input[type="number"], select { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 44px; width: 100%; min-width: 0; }
 .date-row input[type="date"] { flex: 1 1 160px; width: auto; }
 .chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 8px 14px; min-height: 40px; font-size: 14px; }
 .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
@@ -150,6 +150,29 @@ input[type="date"], input[type="text"], input[type="number"], select { backgroun
 .legend-row { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--ink-2); }
 .legend-row span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-row .ev { cursor: default; display: inline-block; width: 34px; }
+
+/* 대시보드 */
+.dash { display: grid; gap: 10px; }
+.dash-today { display: grid; gap: 8px; }
+.dash-today .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.dash-today .head b { font: 20px/1.2 var(--font-display); }
+.dash-today .head span { font-size: 12px; color: var(--muted); }
+.agenda { display: grid; gap: 6px; }
+.ag { display: grid; grid-template-columns: 66px 4px 1fr auto; gap: 10px; align-items: center; min-height: 40px; text-align: left; border: 0; background: none; padding: 2px 0; width: 100%; }
+.ag .w { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; line-height: 1.3; }
+.ag .w b { display: block; color: var(--ink); font-size: 14px; white-space: nowrap; }
+.ag .bar { align-self: stretch; border-radius: 3px; background: var(--pc, var(--c0)); }
+.ag .t { min-width: 0; }
+.ag .t div { font-weight: 600; overflow-wrap: anywhere; }
+.ag .t small { color: var(--muted); font-size: 12px; }
+.ag.cancel .t, .ag.cancel .w { opacity: .45; text-decoration: line-through; }
+.alerts { display: grid; gap: 8px; }
+.alert { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: var(--radius); padding: 10px 12px; font-size: 13px; background: var(--pay-soft); }
+.alert.info { background: var(--accent-soft); }
+.alert span { min-width: 0; }
+.slots { display: grid; gap: 8px; }
+.slot { display: grid; grid-template-columns: 1fr 1fr 40px; gap: 8px; align-items: center; }
+.slot > * { min-width: 0; }
 
 /* 기록 */
 .filters { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -243,7 +266,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   <div id="banner" class="banner" hidden></div>
 
   <!-- 입력 -->
-  <section class="panel" id="panel-add">
+  <section class="panel" id="panel-add" hidden>
     <div class="field">
       <label for="inDate">날짜</label>
       <div class="date-row">
@@ -256,6 +279,10 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     <div class="field">
       <span class="lab">프로그램</span>
       <div class="prog-list" id="progList"></div>
+    </div>
+    <div class="field">
+      <label for="inTime">시간 <span style="font-weight:400;color:var(--muted)">(선택, 레슨 주기에 맞춰 자동으로 채워져요)</span></label>
+      <input type="time" id="inTime">
     </div>
     <div class="field" id="repeatField" hidden>
       <span class="lab">반복</span>
@@ -280,6 +307,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   <!-- 일정 -->
   <section class="panel" id="panel-cal" hidden>
+    <div class="dash" id="dash"></div>
     <div class="cal-head">
       <h2 id="calTitle"></h2>
       <div class="nav">
@@ -355,8 +383,8 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
 <nav class="tabs" aria-label="화면">
   <div class="inner" role="tablist">
-    <button type="button" role="tab" id="tab-add" aria-selected="true" data-tab="add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>입력</button>
-    <button type="button" role="tab" id="tab-cal" aria-selected="false" data-tab="cal"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>일정</button>
+    <button type="button" role="tab" id="tab-cal" aria-selected="true" data-tab="cal"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>일정</button>
+    <button type="button" role="tab" id="tab-add" aria-selected="false" data-tab="add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>입력</button>
     <button type="button" role="tab" id="tab-list" aria-selected="false" data-tab="list"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>기록</button>
     <button type="button" role="tab" id="tab-stats" aria-selected="false" data-tab="stats"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>통계</button>
   </div>
@@ -394,18 +422,18 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const md = (iso) => (+iso.slice(5, 7)) + '/' + (+iso.slice(8, 10));
 
   // ---------- 시트 매핑 ----------
-  // lessons: A레슨ID B날짜 C요일(수식) D프로그램ID E프로그램 F대상(수식) G코치 H결제 I메모 J상태(수식) K원본셀 L진행(완료/예정/취소)
+  // lessons: A레슨ID B날짜 C요일(수식) D프로그램ID E프로그램 F대상(수식) G코치 H결제 I메모 J상태(수식) K원본셀 L진행(완료/예정/취소) M시간
   function parseLessons(values) {
     const out = [];
     (values || []).forEach((r, i) => {
       if (i === 0 || !r || !/^L\d+$/.test(r[0] || '')) return;
       const st = r[11] === PLAN || r[11] === CANCEL ? r[11] : DONE;
       out.push({ row: i + 1, id: r[0], date: r[1] || '', programId: r[3] || '', program: r[4] || '', coach: r[6] || '',
-        payment: String(r[7]).toUpperCase() === 'TRUE', note: r[8] || '', source: r[10] || '', state: st });
+        payment: String(r[7]).toUpperCase() === 'TRUE', note: r[8] || '', source: r[10] || '', state: st, time: r[12] || '' });
     });
     return out;
   }
-  const lessonValues = (l) => [l.id, l.date, null, l.programId, l.program, null, l.coach, !!l.payment, l.note || '', null, l.source || '', l.state || DONE];
+  const lessonValues = (l) => [l.id, l.date, null, l.programId, l.program, null, l.coach, !!l.payment, l.note || '', null, l.source || '', l.state || DONE, l.time || ''];
   // programs: A ID B 프로그램 C 종목 D 세부 E 대상 F 코치 G 메모 H 상태 I~L 집계 수식
   function parsePrograms(values) {
     return (values || []).map((r, i) => ({ r, i })).filter(({ r, i }) => i > 0 && r && r[0]).map(({ r, i }) => ({
@@ -457,17 +485,17 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     return {
       demo: false,
       async load() {
-        const [pv, lv] = await Promise.all([getCol('programs!A:L'), getCol('lessons!A:L')]);
+        const [pv, lv] = await Promise.all([getCol('programs!A:L'), getCol('lessons!A:M')]);
         return { programs: parsePrograms(pv), lessons: parseLessons(lv) };
       },
       async add(list) {
         const start = lastRow(await getCol('lessons!A:A')) + 1, end = start + list.length - 1;
-        await call('update_values', { spreadsheetId: SHEET_ID, range: 'lessons!A' + start + ':L' + end, values: list.map(lessonValues) });
+        await call('update_values', { spreadsheetId: SHEET_ID, range: 'lessons!A' + start + ':M' + end, values: list.map(lessonValues) });
         return list.map((_, i) => start + i);
       },
       async update(l) {
         await check(l);
-        await call('update_values', { spreadsheetId: SHEET_ID, range: 'lessons!A' + l.row + ':L' + l.row, values: [lessonValues(l)] });
+        await call('update_values', { spreadsheetId: SHEET_ID, range: 'lessons!A' + l.row + ':M' + l.row, values: [lessonValues(l)] });
       },
       async remove(l) {
         await check(l);
@@ -511,7 +539,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   // ---------- 상태 ----------
   const S = {
     store: null, programs: [], lessons: [], settings: { programs: {} }, loadedAt: null, busy: false,
-    tab: 'add', settingsOpen: false, pick: null, dupOk: false, repeat: 1,
+    tab: 'cal', settingsOpen: false, pick: null, dupOk: false, repeat: 1,
     listLimit: 60, calMonth: monthKey(todayIso()), calSel: todayIso(), showEndedSet: false
   };
   const $ = (id) => document.getElementById(id);
@@ -531,6 +559,10 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const isEnded = (p) => p && p.status === '종료';
   const shortName = (pid) => conf(pid).short || ((progById(pid) || {}).detail || (progById(pid) || {}).name || pid).replace(/\s+/g, '').slice(0, 3);
   const done = (l) => l.state === DONE;
+  const slotsOf = (pid) => (conf(pid).slots || []).filter((x) => x && x.dow != null);
+  const slotTime = (pid, iso) => { const s = slotsOf(pid).find((x) => +x.dow === dow(iso)); return s ? s.time || '' : ''; };
+  const slotText = (pid) => slotsOf(pid).slice().sort((a, b) => ((+a.dow + 6) % 7) - ((+b.dow + 6) % 7)).map((x) => WEEK[x.dow] + (x.time ? ' ' + x.time : '')).join(', ');
+  const byTime = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.time || '99') < (b.time || '99') ? -1 : (a.time || '99') > (b.time || '99') ? 1 : a.programId.localeCompare(b.programId));
 
   // 색: 앱 설정에 저장된 슬롯이 우선. 없으면 최근 12개월 레슨 수 순으로 남은 슬롯을 배정(필터와 무관하게 고정)
   function colorSlots() {
@@ -621,15 +653,16 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   // ---------- 입력 ----------
   function renderAdd() {
     const today = todayIso(), date = $('inDate').value, future = date > today;
+    if (S.pick && !$('inTime').dataset.touched) $('inTime').value = slotTime(S.pick, date);
     const stats = programStats().filter((p) => !isEnded(p)).sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''));
     const list = $('progList'); list.replaceChildren();
     if (!stats.length) list.append(el('div', { class: 'empty', text: S.loadedAt ? '진행 중인 프로그램이 없어요. 오른쪽 위 설정에서 새 프로그램을 시작하세요.' : '프로그램 목록을 불러오는 중이에요.' }));
     stats.forEach((p) => {
-      const meta = [p.student || '대상 미입력', p.coach, p.lastDate ? '최근 ' + md(p.lastDate) : '기록 없음', p.upcoming.length ? '예정 ' + p.upcoming.length + '회' : ''].filter(Boolean).join(' · ');
+      const meta = [p.student || '대상 미입력', slotText(p.id) || p.coach, p.lastDate ? '최근 ' + md(p.lastDate) : '기록 없음', p.upcoming.length ? '예정 ' + p.upcoming.length + '회' : ''].filter(Boolean).join(' · ');
       const since = el('span', { class: 'since' });
       if (p.sincePay != null) since.append(el('div', { text: '결제 후 ' + p.sincePay + '회' + (p.cycle ? ' / ' + p.cycle : '') }), punch(p.sincePay, p.cycle));
       else since.append(el('div', { text: '결제 기록 없음' }));
-      list.append(el('button', { type: 'button', class: 'prog', style: '--pc:' + colorVar(p.id), 'aria-pressed': String(S.pick === p.id), onclick: () => { S.pick = p.id; S.dupOk = false; renderAdd(); } },
+      list.append(el('button', { type: 'button', class: 'prog', style: '--pc:' + colorVar(p.id), 'aria-pressed': String(S.pick === p.id), onclick: () => { S.pick = p.id; S.dupOk = false; delete $('inTime').dataset.touched; renderAdd(); } },
         el('span', { class: 'name', text: p.name }), since, el('span', { class: 'meta', text: meta })));
     });
     $('chipToday').setAttribute('aria-pressed', String(date === today));
@@ -656,12 +689,12 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const list = ids.map((id, i) => {
       const d = addDays(date, i * 7);
       return { id, date: d, programId: p.id, program: p.name, coach: p.coach, payment: i === 0 && $('inPay').checked, note: $('inNote').value.trim(),
-        source: '앱 입력 ' + today, state: d > today ? PLAN : DONE };
+        source: '앱 입력 ' + today, state: d > today ? PLAN : DONE, time: $('inTime').value || '' };
     });
     await run(async () => {
       const rows = await S.store.add(list);
       list.forEach((l, i) => { l.row = rows[i]; S.lessons.push(l); });
-      $('inPay').checked = false; $('inNote').value = ''; S.dupOk = false; S.repeat = 1;
+      $('inPay').checked = false; $('inNote').value = ''; delete $('inTime').dataset.touched; S.dupOk = false; S.repeat = 1;
       toast(p.name + ' ' + md(date) + (n > 1 ? ' 외 ' + (n - 1) + '회' : '') + (list[0].state === PLAN ? ' 일정 등록' : ' 저장'), n === 1 ? { label: '되돌리기', run: () => removeLesson(list[0], '저장을 취소했어요') } : null);
     });
   }
@@ -708,9 +741,10 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       el('span', null, el('span', { class: 'ev plan', style: '--pc:var(--c0)', text: '예정' })),
       el('span', null, el('span', { class: 'ev cancel', style: '--pc:var(--c0)', text: '취소' })));
     renderDay();
+    renderDash();
   }
   function renderDay() {
-    const d = S.calSel, items = S.lessons.filter((l) => l.date === d).sort((a, b) => a.programId.localeCompare(b.programId));
+    const d = S.calSel, items = S.lessons.filter((l) => l.date === d).sort(byTime);
     $('dayTitle').textContent = md(d) + ' (' + WEEK[dow(d)] + ')';
     const box = $('dayList'); box.replaceChildren();
     if (!items.length) { box.append(el('div', { class: 'empty', text: '이 날은 레슨이 없어요.' })); return; }
@@ -723,7 +757,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         el('span', { class: 'bar' }),
         el('button', { type: 'button', class: 't', style: 'border:0;background:none;text-align:left;padding:0', onclick: () => openEdit(l) },
           el('div', { text: l.program }),
-          el('small', { text: [studentOf(l.programId), l.payment ? '결제' : '', l.note].filter(Boolean).join(' · ') || l.coach })),
+          el('small', { text: [l.time, studentOf(l.programId), l.payment ? '결제' : '', l.note].filter(Boolean).join(' · ') || l.coach })),
         el('div', { style: 'display:grid;gap:6px;justify-items:end' },
           el('span', { class: 'state' + (st === PLAN ? ' plan' : st === 'check' ? ' check' : ''), text: st === 'check' ? '확인 필요' : l.state }), acts)));
     });
@@ -786,6 +820,58 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     chip.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
+  async function generateSchedule(p, weeks) {
+    const sl = slotsOf(p.id); if (!p || !sl.length) return 0;
+    const today = todayIso(), taken = new Set(S.lessons.filter((l) => l.programId === p.id && l.state !== CANCEL).map((l) => l.date));
+    const dates = [];
+    for (let d = addDays(today, 1); d <= addDays(today, weeks * 7); d = addDays(d, 1)) {
+      const s = sl.find((x) => +x.dow === dow(d));
+      if (s && !taken.has(d)) dates.push({ d, time: s.time || '' });
+    }
+    if (!dates.length) return 0;
+    const ids = nextIds(dates.length);
+    const list = dates.map((x, i) => ({ id: ids[i], date: x.d, time: x.time, programId: p.id, program: p.name, coach: p.coach, payment: false, note: '', source: '레슨 주기 ' + today, state: PLAN }));
+    const rows = await S.store.add(list);
+    list.forEach((l, i) => { l.row = rows[i]; S.lessons.push(l); });
+    return list.length;
+  }
+
+  function dayLabel(iso) {
+    const t = todayIso();
+    return iso === t ? '오늘' : iso === addDays(t, 1) ? '내일' : md(iso) + ' ' + WEEK[dow(iso)];
+  }
+  function renderDash() {
+    const today = todayIso(), until = addDays(today, 7), box = $('dash'); box.replaceChildren();
+    const upcoming = S.lessons.filter((l) => l.date >= today && l.date <= until && l.state !== DONE || (l.date === today && l.state === DONE)).sort(byTime);
+    const planned7 = upcoming.filter((l) => l.state === PLAN).length;
+    const card = el('div', { class: 'card dash-today' },
+      el('div', { class: 'head' }, el('b', { text: '오늘 ' + md(today) + ' (' + WEEK[dow(today)] + ')' }), el('span', { text: '앞으로 7일 예정 ' + planned7 + '회' })));
+    const ag = el('div', { class: 'agenda' });
+    if (!upcoming.length) ag.append(el('div', { class: 'hint', text: S.loadedAt ? '앞으로 7일 동안 잡힌 레슨이 없어요. 설정에서 레슨 주기를 정하고 일정을 만들 수 있어요.' : '일정을 불러오는 중이에요.' }));
+    upcoming.slice(0, 8).forEach((l) => ag.append(el('button', { type: 'button', class: 'ag' + (l.state === CANCEL ? ' cancel' : ''), style: '--pc:' + colorVar(l.programId), onclick: () => { S.calMonth = monthKey(l.date); S.calSel = l.date; renderCal(); openEdit(l); } },
+      el('span', { class: 'w' }, el('b', { text: dayLabel(l.date) }), l.time || ''),
+      el('span', { class: 'bar' }),
+      el('span', { class: 't' }, el('div', { text: l.program }), el('small', { text: [studentOf(l.programId), l.state === CANCEL ? '취소' : l.state === DONE ? '완료' : '', l.payment ? '결제' : ''].filter(Boolean).join(' · ') })),
+      el('span')))); 
+    if (upcoming.length > 8) ag.append(el('div', { class: 'hint', text: '외 ' + (upcoming.length - 8) + '건은 달력에서 볼 수 있어요.' }));
+    card.append(ag); box.append(card);
+
+    const alerts = el('div', { class: 'alerts' });
+    const check = S.lessons.filter((l) => l.state === PLAN && l.date < today).sort(byTime);
+    if (check.length) alerts.append(el('div', { class: 'alert' }, el('span', { text: '지난 예정 레슨 ' + check.length + '건이 완료인지 확인이 필요해요.' }),
+      el('button', { type: 'button', class: 'mini', text: '확인', onclick: () => { S.calMonth = monthKey(check[0].date); S.calSel = check[0].date; renderCal(); $('dayList').scrollIntoView({ block: 'center' }); } })));
+    programStats().filter((p) => !isEnded(p) && p.cycle && p.sincePay != null).forEach((p) => {
+      const due = p.sincePay >= p.cycle;
+      if (!due && !(p.nextPay && p.nextPay.date <= addDays(today, 14))) return;
+      alerts.append(el('div', { class: 'alert' }, el('span', { text: p.name + ': ' + (p.nextPay ? '다음 결제 ' + dayLabel(p.nextPay.date) + ' 레슨' : '다음 레슨에 결제할 차례') + ' (' + p.sincePay + '/' + p.cycle + '회)' })));
+    });
+    S.programs.filter((p) => !isEnded(p) && slotsOf(p.id).length && !S.lessons.some((l) => l.programId === p.id && l.state === PLAN && l.date > today && l.date <= addDays(today, 14))).forEach((p) => {
+      alerts.append(el('div', { class: 'alert info' }, el('span', { text: p.name + ' 예정 일정이 비어 있어요 (' + slotText(p.id) + ')' }),
+        el('button', { type: 'button', class: 'mini go', text: '4주 만들기', onclick: () => run(async () => { const n = await generateSchedule(p, 4); toast(p.name + ' 예정 일정 ' + n + '회를 만들었어요'); }) })));
+    });
+    if (alerts.childNodes.length) box.append(alerts);
+  }
+
   // ---------- 기록 ----------
   function fillSelect(sel, opts) {
     const cur = sel.value;
@@ -833,6 +919,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   function openEdit(l) {
     let state = l.state;
     const date = el('input', { type: 'date', id: 'edDate', value: l.date });
+    const time = el('input', { type: 'time', id: 'edTime', value: l.time || '' });
     const pay = el('input', { type: 'checkbox', id: 'edPay', 'aria-label': '결제' }); pay.checked = l.payment;
     const note = el('input', { type: 'text', id: 'edNote', value: l.note });
     const confirmBox = el('div', { class: 'warn', hidden: true },
@@ -843,7 +930,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     openSheet(
       el('h3', { text: l.program }),
       el('div', { class: 'hint', text: l.id + ' · ' + l.coach + (l.source ? ' · ' + l.source : '') }),
-      el('div', { class: 'field' }, el('label', { for: 'edDate', text: '날짜' }), date),
+      el('div', { class: 'two' }, el('div', { class: 'field' }, el('label', { for: 'edDate', text: '날짜' }), date), el('div', { class: 'field' }, el('label', { for: 'edTime', text: '시간' }), time)),
       el('div', { class: 'field' }, el('span', { class: 'lab', text: '진행' }), segControl([[DONE, '완료'], [PLAN, '예정'], [CANCEL, '사정상 취소']], state, (v) => { state = v; })),
       el('div', { class: 'card toggle' }, el('div', { class: 'lab', text: '결제' }), el('label', { class: 'switch' }, pay, el('span'))),
       el('div', { class: 'field' }, el('label', { for: 'edNote', text: '메모' }), note),
@@ -853,7 +940,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }),
         el('button', { type: 'button', class: 'primary', text: '저장', onclick: () => {
           if (!isIso(date.value)) return;
-          const next = { ...l, date: date.value, payment: pay.checked, note: note.value.trim(), state };
+          const next = { ...l, date: date.value, time: time.value || '', payment: pay.checked, note: note.value.trim(), state };
           closeSheet();
           run(async () => { await S.store.update(next); Object.assign(l, next); toast('수정했어요'); });
         } })));
@@ -872,7 +959,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const row = (p) => el('button', { type: 'button', class: 'set-row' + (isEnded(p) ? ' ended' : ''), style: '--pc:' + colorVar(p.id), onclick: () => openProgram(p) },
       el('span', { class: 'n', text: p.name + (conf(p.id).short ? ' · ' + conf(p.id).short : '') }),
       el('span', { class: 'state' + (p.status === '진행중' ? ' plan' : ''), text: p.status || '상태 미지정' }),
-      el('small', { text: [p.student || '대상 미입력', p.coach, p.cycle ? p.cycle + '회마다 결제' : '결제 주기 미설정', p.lastDate ? '최근 ' + p.lastDate : ''].filter(Boolean).join(' · ') }));
+      el('small', { text: [p.student || '대상 미입력', slotText(p.id) || '레슨 주기 미설정', p.cycle ? p.cycle + '회마다 결제' : '결제 주기 미설정', p.lastDate ? '최근 ' + p.lastDate : ''].filter(Boolean).join(' · ') }));
     const active = stats.filter((p) => !isEnded(p)), ended = stats.filter(isEnded);
     $('setActive').replaceChildren(...(active.length ? active.map(row) : [el('div', { class: 'empty', text: '진행 중인 프로그램이 없어요.' })]));
     $('setEnded').replaceChildren(...ended.map(row));
@@ -893,7 +980,45 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const sw = el('div', { class: 'swatches', role: 'group', 'aria-label': '색' });
     const drawSw = () => sw.replaceChildren(...PALETTE.map((n) => el('button', { type: 'button', 'aria-label': '색 ' + n, 'aria-pressed': String(n === color), style: 'background:var(--c' + n + ')', onclick: () => { color = n; drawSw(); } })));
     drawSw();
+    let slots = (c.slots || []).map((x) => ({ ...x }));
+    const slotBox = el('div', { class: 'slots' });
+    const drawSlots = () => slotBox.replaceChildren(
+      ...slots.map((x, i) => {
+        const day = el('select', { 'aria-label': '요일' }, ...[1, 2, 3, 4, 5, 6, 0].map((d) => el('option', { value: d, text: WEEK[d] + '요일' })));
+        day.value = String(x.dow); day.addEventListener('change', () => { x.dow = +day.value; });
+        const tm = el('input', { type: 'time', value: x.time || '', 'aria-label': '시간' }); tm.addEventListener('input', () => { x.time = tm.value; });
+        return el('div', { class: 'slot' }, day, tm, el('button', { type: 'button', class: 'iconbtn', 'aria-label': '이 요일 빼기', text: '✕', onclick: () => { slots.splice(i, 1); drawSlots(); } }));
+      }),
+      el('button', { type: 'button', class: 'linkbtn', text: '＋ 요일 추가', onclick: () => { slots.push({ dow: 3, time: '19:00' }); drawSlots(); } }));
+    drawSlots();
+    let weeks = 4;
+    const genBox = isNew ? null : el('div', { class: 'card', style: 'display:grid;gap:10px' },
+      el('div', { class: 'lab', style: 'font-weight:600', text: '이 주기로 예정 일정 만들기' }),
+      el('div', { class: 'hint', text: '내일부터 위 요일·시간으로 예정 레슨을 넣어요. 이미 있는 날은 건너뛰어요.' }),
+      segControl([[4, '4주'], [8, '8주'], [12, '12주']], weeks, (v) => { weeks = v; }),
+      el('button', { type: 'button', class: 'secondary', text: '저장하고 일정 만들기', onclick: () => submit(true) }));
     const err = el('div', { class: 'warn', hidden: true });
+    const submit = (gen) => {
+      const nm = name.value.trim(), cy = cycle.value ? Math.round(+cycle.value) : null;
+      if (!nm) { err.textContent = '이름을 입력해 주세요.'; err.hidden = false; return; }
+      if (cy != null && !(cy >= 1 && cy <= 99)) { err.textContent = '결제 주기는 1~99 사이 숫자로 입력해 주세요.'; err.hidden = false; return; }
+      if (gen && !slots.length) { err.textContent = '일정을 만들려면 레슨 요일을 먼저 추가해 주세요.'; err.hidden = false; return; }
+      const parts = splitName(nm);
+      const id = isNew ? 'P' + pad(S.programs.reduce((m, x) => Math.max(m, parseInt(x.id.slice(1), 10) || 0), 0) + 1) : p.id;
+      const prog = { ...(p || {}), id, name: nm, sport: parts.sport, detail: parts.detail, student: student.value.trim(), coach: coach.value.trim(), memo: memo.value.trim(), status };
+      const cleanSlots = slots.filter((x, i, a) => a.findIndex((y) => +y.dow === +x.dow) === i).map((x) => ({ dow: +x.dow, time: x.time || '' }));
+      const nextSettings = { ...S.settings, programs: { ...S.settings.programs, [id]: { cycle: cy, color, short: short.value.trim(), slots: cleanSlots } } };
+      closeSheet();
+      run(async () => {
+        if (isNew) { await S.store.addProgram(prog); S.programs.push(prog); }
+        else { await S.store.updateProgram(prog); Object.assign(progById(id), prog); }
+        await S.store.saveSettings(nextSettings); S.settings = nextSettings; SLOT = colorSlots();
+        if (isNew) S.pick = id;
+        let made = 0;
+        if (gen) made = await generateSchedule(progById(id), weeks);
+        toast(gen ? nm + ' 예정 일정 ' + made + '회를 만들었어요' : isNew ? nm + ' 시작했어요' : '저장했어요');
+      });
+    };
     openSheet(
       el('h3', { text: isNew ? '새 프로그램 시작' : '프로그램 설정' }),
       el('div', { class: 'field' }, el('label', { for: 'pgName', text: '이름' }), name),
@@ -904,29 +1029,15 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         el('div', { class: 'field' }, el('label', { for: 'pgCycle', text: '결제 주기 (회)' }), cycle),
         el('div', { class: 'field' }, el('label', { for: 'pgShort', text: '짧은 이름' }), short)),
       el('div', { class: 'hint', text: '결제 주기: 한 번 결제로 듣는 레슨 수예요. 필라테스 10회권이면 10.' }),
+      el('div', { class: 'field' }, el('span', { class: 'lab', text: '레슨 주기 (요일·시간)' }), slotBox),
+      genBox,
       el('div', { class: 'field' }, el('span', { class: 'lab', text: '색' }), sw),
       el('div', { class: 'field' }, el('span', { class: 'lab', text: '상태' }), segControl([['진행중', '진행 중'], ['종료', '종료 (숨기기)']], status, (v) => { status = v; })),
       el('div', { class: 'field' }, el('label', { for: 'pgMemo', text: '메모' }), memo),
       err,
       el('div', { class: 'btn-row' },
         el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }),
-        el('button', { type: 'button', class: 'primary', text: isNew ? '시작하기' : '저장', onclick: () => {
-          const nm = name.value.trim(), cy = cycle.value ? Math.round(+cycle.value) : null;
-          if (!nm) { err.textContent = '이름을 입력해 주세요.'; err.hidden = false; return; }
-          if (cy != null && !(cy >= 1 && cy <= 99)) { err.textContent = '결제 주기는 1~99 사이 숫자로 입력해 주세요.'; err.hidden = false; return; }
-          const parts = splitName(nm);
-          const id = isNew ? 'P' + pad(S.programs.reduce((m, x) => Math.max(m, parseInt(x.id.slice(1), 10) || 0), 0) + 1) : p.id;
-          const prog = { ...(p || {}), id, name: nm, sport: parts.sport, detail: parts.detail, student: student.value.trim(), coach: coach.value.trim(), memo: memo.value.trim(), status };
-          const nextSettings = { ...S.settings, programs: { ...S.settings.programs, [id]: { cycle: cy, color, short: short.value.trim() } } };
-          closeSheet();
-          run(async () => {
-            if (isNew) { await S.store.addProgram(prog); S.programs.push(prog); }
-            else { await S.store.updateProgram(prog); Object.assign(progById(id), prog); }
-            await S.store.saveSettings(nextSettings); S.settings = nextSettings; SLOT = colorSlots();
-            if (isNew) S.pick = id;
-            toast(isNew ? nm + ' 시작했어요' : '저장했어요');
-          });
-        } })));
+        el('button', { type: 'button', class: 'primary', text: isNew ? '시작하기' : '저장', onclick: () => submit(false) })));
   }
 
   // ---------- 통계 ----------
@@ -1075,7 +1186,8 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   // ---------- 이벤트 ----------
   $('inDate').value = todayIso();
-  $('inDate').addEventListener('change', () => { S.dupOk = false; renderAdd(); });
+  $('inDate').addEventListener('change', () => { S.dupOk = false; delete $('inTime').dataset.touched; renderAdd(); });
+  $('inTime').addEventListener('input', () => { $('inTime').dataset.touched = '1'; });
   $('chipToday').addEventListener('click', () => { $('inDate').value = todayIso(); S.dupOk = false; renderAdd(); });
   $('chipYesterday').addEventListener('click', () => { $('inDate').value = addDays(todayIso(), -1); S.dupOk = false; renderAdd(); });
   document.querySelectorAll('#repeatSeg button').forEach((b) => b.addEventListener('click', () => { S.repeat = +b.dataset.n; renderAdd(); }));
@@ -1099,8 +1211,8 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(redrawStats, 150); });
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redrawStats);
   new MutationObserver(redrawStats).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-  try { const t = localStorage.getItem('lesson-tab'); if (['cal', 'list', 'stats'].includes(t)) S.tab = t; } catch (e) {}
-  if (location.hash === '#cal' || location.hash === '#stats' || location.hash === '#list') S.tab = location.hash.slice(1);
+  try { const t = localStorage.getItem('lesson-tab'); if (['cal', 'add', 'list', 'stats'].includes(t)) S.tab = t; } catch (e) {}
+  if (['#cal', '#add', '#stats', '#list'].includes(location.hash)) S.tab = location.hash.slice(1);
 
   // ---------- 시작 ----------
   async function boot() {
