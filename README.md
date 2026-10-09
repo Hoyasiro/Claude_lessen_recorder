@@ -15,6 +15,14 @@
 
 원본의 `+` 표시는 `결제` 체크박스로 옮겼다.
 
+## 레슨 수첩 앱
+
+- 주소: https://claude.ai/artifact/K7AqxrWKAsnAmxTbpcYz8z (비공개, Claude 앱/claude.ai에서 열기)
+- 소스: `web/lesson-app.html` — Google Sheets 커넥터로 `레슨기록_DB`를 직접 읽고 쓴다.
+- 앱 설정(결제 주기·레슨 주기·색·짧은 이름)은 페이지 DB의 `config/app` 문서(JSON)에 저장한다.
+- lessons 탭 L열 `진행`(완료/예정/취소). 레슨 시간은 저장하지 않고 레슨 주기에서 계산한다.
+- 로컬 데모: `node tools/build_demo.js <snapshot.json> <out.html>` (시트에 쓰지 않음, 결과물은 커밋 금지)
+
 ## 레슨 추가
 
 1. **Claude에게 요청**: "10/14 준희 엘리트 레슨 추가, 결제함" 처럼 말하면 lessons 탭에 행을 추가한다.
