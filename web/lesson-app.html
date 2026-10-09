@@ -604,13 +604,27 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   // 설치형 앱(PWA): Apps Script 웹 앱 API로 시트를 읽고 쓴다
   function apiStore(cfg) {
-    async function post(action, extra) {
-      let res;
-      try { res = await fetch(cfg.api, { method: 'POST', body: JSON.stringify({ token: cfg.token, action, ...(extra || {}) }) }); }
-      catch (e) { throw { code: 'offline' }; }
+    // 기본은 POST. 브라우저가 POST를 막으면 같은 요청을 GET(?payload=)으로 보낸다.
+    let mode = 'post';
+    async function parse(res) {
       let j; try { j = await res.json(); } catch (e) { throw { code: 'api', message: '서버 응답을 읽지 못했어요 (' + res.status + ')' }; }
       if (j.error) throw { code: j.error === 'unauthorized' ? 'unauthorized' : 'api', message: j.error };
       return j;
+    }
+    async function viaGet(body) {
+      const url = cfg.api + '?token=' + encodeURIComponent(cfg.token) + '&payload=' + encodeURIComponent(JSON.stringify(body));
+      let res; try { res = await fetch(url); } catch (e) { throw { code: 'blocked' }; }
+      const j = await parse(res);
+      if (j.ok === true && j.version == null && Object.keys(j).length === 1) throw { code: 'old_server' }; // payload를 모르는 예전 서버
+      return j;
+    }
+    async function post(action, extra) {
+      const body = { action, ...(extra || {}) };
+      if (mode === 'get') return viaGet(body);
+      let res;
+      try { res = await fetch(cfg.api, { method: 'POST', body: JSON.stringify({ token: cfg.token, ...body }) }); }
+      catch (e) { mode = 'get'; return viaGet(body); }
+      return parse(res);
     }
     let last = null;
     return {
@@ -642,6 +656,8 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const code = e && e.code;
     if (code === 'moved' || code === 'no_db') return e.message;
     if (code === 'offline') return '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.';
+    if (code === 'old_server') return '서버 코드가 예전 버전이에요. Apps Script 코드를 새 버전으로 바꾸고 다시 배포해 주세요. [고치는 방법]을 눌러 보세요.';
+    if (code === 'blocked') return '이 브라우저가 서버 요청을 막고 있어요. 삼성 인터넷이면 설정 → 개인정보 보호 → 스마트 안티 트래킹을 끄거나, 이 사이트를 예외로 추가해 주세요.';
     if (code === 'unauthorized') return '연결 정보가 맞지 않아요. 연결 링크를 휴대폰에서 다시 열어 주세요.';
     if (code === 'api') return '서버가 요청을 처리하지 못했어요: ' + (e.message || '');
     if (code === 'needs_reauth') return 'Google Sheets 연결이 만료됐어요. claude.ai 설정 → 커넥터에서 다시 연결해 주세요.';
@@ -743,6 +759,10 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const PERM_CODES = ['not_in_manifest', 'not_granted', 'capability_disabled', 'approval_required', 'consent_required', 'needs_reauth', 'server_not_connected', 'selection_required'];
   async function showLoadError(e) {
     const code = e && e.code;
+    if (S.store && S.store.api && (code === 'old_server' || code === 'blocked')) {
+      banner(errorText(e), true, code === 'old_server' ? [['고치는 방법', openUpdateGuide], ['다시 시도', reload]] : [['다시 시도', reload]]);
+      return;
+    }
     if (S.store && S.store.api && code === 'offline') {
       // 설치형 앱: 서버 주소를 브라우저로 직접 열어 보면 원인을 알 수 있다
       const cfg = apiConfig();
@@ -1159,6 +1179,17 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
           if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: 'config', api: next.api, token: next.token });
           closeSheet(); S.store = apiStore(next); reload();
         } })));
+  }
+  function openUpdateGuide() {
+    const RAW = 'https://raw.githubusercontent.com/Hoyasiro/Claude_lessen_recorder/ccr-86cf1ca5-ng9k2d/apps-script/dist/LessonApi.gs';
+    const step = (n, ...kids) => el('div', { style: 'display:grid;grid-template-columns:24px 1fr;gap:8px' }, el('b', { text: n + '.' }), el('div', null, ...kids));
+    openSheet(
+      el('h3', { text: '서버 코드 업데이트' }),
+      el('div', { class: 'hint', text: 'Apps Script 편집기(데스크톱 모드)에서 하세요. 연결 링크와 서버 주소는 그대로예요.' }),
+      step(1, '편집기 코드를 모두 지우고 아래 내용을 전체 붙여 넣은 뒤 저장(💾): ', el('a', { href: RAW, target: '_blank', rel: 'noopener', style: 'color:var(--accent);word-break:break-all', text: RAW })),
+      step(2, '배포 → 배포 관리 → 연필(수정) → 버전 "새 버전" → 배포'),
+      step(3, '이 앱으로 돌아와 [다시 시도]'),
+      el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }));
   }
   function openFixGuide() {
     const step = (n, t) => el('div', { style: 'display:grid;grid-template-columns:24px 1fr;gap:8px' }, el('b', { text: n + '.' }), el('div', { text: t }));

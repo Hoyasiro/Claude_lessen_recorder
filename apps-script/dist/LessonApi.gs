@@ -138,11 +138,19 @@ function doGet(e) {
   var q = (e && e.parameter) || {};
   if (q.token !== props_().getProperty('API_TOKEN')) return json_({ error: 'unauthorized' });
   if (q.action === 'digest') return json_(digest_(todayIso_()));
-  return json_({ ok: true });
+  if (q.payload) {
+    var b; try { b = JSON.parse(q.payload); } catch (err) { return json_({ error: 'bad_json' }); }
+    b.token = q.token;
+    return run_(b);
+  }
+  return json_({ ok: true, version: 2 });
 }
 function doPost(e) {
   var body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ error: 'bad_json' }); }
+  return run_(body);
+}
+function run_(body) {
   if (body.token !== props_().getProperty('API_TOKEN')) return json_({ error: 'unauthorized' });
   var lock = LockService.getScriptLock();
   try {
