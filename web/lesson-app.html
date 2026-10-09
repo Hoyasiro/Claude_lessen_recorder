@@ -620,7 +620,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         const t = setTimeout(() => done(reject, { code: 'blocked' }), 30000);
         window[cb] = (j) => {
           if (j && j.error) return done(reject, { code: j.error === 'unauthorized' ? 'unauthorized' : 'api', message: j.error });
-          if (j && j.ok === true && j.version == null && Object.keys(j).length === 1) return done(reject, { code: 'old_server' });
+          if (body.action === 'load' && j && !j.lessons) return done(reject, { code: 'old_server' }); // 예전 서버는 payload를 몰라 {ok:true}만 준다
           done(resolve, j);
         };
         sc.onerror = () => done(reject, { code: 'blocked' });
@@ -633,7 +633,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       const url = cfg.api + '?token=' + encodeURIComponent(cfg.token) + '&payload=' + encodeURIComponent(JSON.stringify(body));
       let res; try { res = await fetch(url); } catch (e) { mode = 'jsonp'; return viaJsonp(body); }
       const j = await parse(res);
-      if (j.ok === true && j.version == null && Object.keys(j).length === 1) throw { code: 'old_server' }; // payload를 모르는 예전 서버
+      if (body.action === 'load' && !j.lessons) throw { code: 'old_server' }; // 예전 서버는 payload를 몰라 {ok:true}만 준다
       return j;
     }
     async function post(action, extra) {
