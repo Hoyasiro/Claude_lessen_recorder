@@ -37,7 +37,7 @@ demo.programs.forEach((p) => {
   const wd = slot ? slot.dow : cnt.indexOf(Math.max(...cnt));
   let d = addDays(today, ((wd - dow(today) + 7) % 7) || 7);
   for (let i = 0; i < 3; i++, d = addDays(d, 7)) {
-    examples.push({ id: 'L' + String(++nextNo).padStart(4, '0'), date: d, time: slot ? slot.time : '', programId: p.id, program: p.name, coach: p.coach, payment: false, note: '', source: '예시 일정', state: '예정' });
+    examples.push({ id: 'L' + String(++nextNo).padStart(4, '0'), date: d, programId: p.id, program: p.name, coach: p.coach, payment: false, note: '', source: '예시 일정', state: '예정' });
   }
 });
 // 사정상 취소한 예시 1건, 지난 예정(확인 필요) 예시 1건
