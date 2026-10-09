@@ -20,7 +20,8 @@ var LESSON_COLUMNS = [
   { key: 'payment', label: '결제' },
   { key: 'note', label: '메모' },
   { key: 'status', label: '상태', formula: '={"상태";ARRAYFORMULA(IF(LEN(D2:D),IFERROR(VLOOKUP(D2:D,programs!A:H,8,FALSE)&"",""),))}' },
-  { key: 'source_cell', label: '원본셀' }
+  { key: 'source_cell', label: '원본셀' },
+  { key: 'state', label: '진행' } // 완료/예정/취소 (이관한 기록은 모두 완료)
 ];
 
 /** programs 의 집계 컬럼은 행마다 수식({r} = 행 번호) */
@@ -50,7 +51,6 @@ var ISSUE_COLUMNS = [
 
 var STATUS_VALUES = ['진행중', '종료'];
 
-var WEEKDAYS_KO = ['일', '월', '화', '수', '목', '금', '토'];
 var DATE_CELL_RE = /^(\d{4})-(\d{2})-(\d{2})\s*(\+)?\s*(.*)$/;
 
 function columnLetter_(index) {
@@ -72,18 +72,6 @@ function toIso_(y, m, d) {
 function isValidDate_(y, m, d) {
   var dt = new Date(Date.UTC(y, m - 1, d));
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-}
-
-function weekdayKo_(iso) {
-  var p = iso.split('-');
-  return WEEKDAYS_KO[new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay()];
-}
-
-/** 프로그램명에 대상이 드러난 경우만 채우고 나머지는 수기 입력 */
-function guessStudent_(name) {
-  if (/엄빠/.test(name)) return '엄빠';
-  if (/준희/.test(name)) return '준희';
-  return '';
 }
 
 /** "야구(서구 대회)" → { sport: "야구", detail: "서구 대회" } */
@@ -119,7 +107,7 @@ function normalizeLegacy(values, opts) {
       sport: parts.sport,
       detail: parts.detail,
       coach: String(coachRow[c] || '').trim(),
-      student: guessStudent_(name),
+      student: '', // 대상은 programs 탭에서 직접 입력
       memo: [],
       status: ''
     };
@@ -170,13 +158,13 @@ function normalizeLegacy(values, opts) {
       if (/종료/.test(note)) program.status = '종료';
       rawLessons.push({
         date: iso,
-        weekday: weekdayKo_(iso),
         program_id: program.program_id,
         program: name,
         coach: program.coach,
         payment: !!m[4],
         note: note,
-        source_cell: cell
+        source_cell: cell,
+        state: '완료'
       });
     }
   }
@@ -220,22 +208,10 @@ function toSheetRows(objects, columns, firstRow) {
   }));
 }
 
-/** 미리보기용: 수식 대신 계산된 값으로 채운 2차원 배열 */
-function toPreviewRows(objects, columns) {
-  return [columns.map(function (c) { return c.label; })].concat(objects.map(function (o) {
-    return columns.map(function (c) {
-      var v = o[c.key];
-      return v === true ? '☑' : v === false ? '☐' : v === undefined ? '' : v;
-    });
-  }));
-}
-
 if (typeof module !== 'undefined') {
   module.exports = {
     normalizeLegacy: normalizeLegacy,
     toSheetRows: toSheetRows,
-    toPreviewRows: toPreviewRows,
-    weekdayKo: weekdayKo_,
     LESSON_COLUMNS: LESSON_COLUMNS,
     PROGRAM_COLUMNS: PROGRAM_COLUMNS,
     ISSUE_COLUMNS: ISSUE_COLUMNS,

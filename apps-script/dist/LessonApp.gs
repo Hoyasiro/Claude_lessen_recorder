@@ -23,7 +23,8 @@ var LESSON_COLUMNS = [
   { key: 'payment', label: '결제' },
   { key: 'note', label: '메모' },
   { key: 'status', label: '상태', formula: '={"상태";ARRAYFORMULA(IF(LEN(D2:D),IFERROR(VLOOKUP(D2:D,programs!A:H,8,FALSE)&"",""),))}' },
-  { key: 'source_cell', label: '원본셀' }
+  { key: 'source_cell', label: '원본셀' },
+  { key: 'state', label: '진행' } // 완료/예정/취소 (이관한 기록은 모두 완료)
 ];
 
 /** programs 의 집계 컬럼은 행마다 수식({r} = 행 번호) */
@@ -53,7 +54,6 @@ var ISSUE_COLUMNS = [
 
 var STATUS_VALUES = ['진행중', '종료'];
 
-var WEEKDAYS_KO = ['일', '월', '화', '수', '목', '금', '토'];
 var DATE_CELL_RE = /^(\d{4})-(\d{2})-(\d{2})\s*(\+)?\s*(.*)$/;
 
 function columnLetter_(index) {
@@ -75,18 +75,6 @@ function toIso_(y, m, d) {
 function isValidDate_(y, m, d) {
   var dt = new Date(Date.UTC(y, m - 1, d));
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-}
-
-function weekdayKo_(iso) {
-  var p = iso.split('-');
-  return WEEKDAYS_KO[new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay()];
-}
-
-/** 프로그램명에 대상이 드러난 경우만 채우고 나머지는 수기 입력 */
-function guessStudent_(name) {
-  if (/엄빠/.test(name)) return '엄빠';
-  if (/준희/.test(name)) return '준희';
-  return '';
 }
 
 /** "야구(서구 대회)" → { sport: "야구", detail: "서구 대회" } */
@@ -122,7 +110,7 @@ function normalizeLegacy(values, opts) {
       sport: parts.sport,
       detail: parts.detail,
       coach: String(coachRow[c] || '').trim(),
-      student: guessStudent_(name),
+      student: '', // 대상은 programs 탭에서 직접 입력
       memo: [],
       status: ''
     };
@@ -173,13 +161,13 @@ function normalizeLegacy(values, opts) {
       if (/종료/.test(note)) program.status = '종료';
       rawLessons.push({
         date: iso,
-        weekday: weekdayKo_(iso),
         program_id: program.program_id,
         program: name,
         coach: program.coach,
         payment: !!m[4],
         note: note,
-        source_cell: cell
+        source_cell: cell,
+        state: '완료'
       });
     }
   }
@@ -223,22 +211,10 @@ function toSheetRows(objects, columns, firstRow) {
   }));
 }
 
-/** 미리보기용: 수식 대신 계산된 값으로 채운 2차원 배열 */
-function toPreviewRows(objects, columns) {
-  return [columns.map(function (c) { return c.label; })].concat(objects.map(function (o) {
-    return columns.map(function (c) {
-      var v = o[c.key];
-      return v === true ? '☑' : v === false ? '☐' : v === undefined ? '' : v;
-    });
-  }));
-}
-
 if (typeof module !== 'undefined') {
   module.exports = {
     normalizeLegacy: normalizeLegacy,
     toSheetRows: toSheetRows,
-    toPreviewRows: toPreviewRows,
-    weekdayKo: weekdayKo_,
     LESSON_COLUMNS: LESSON_COLUMNS,
     PROGRAM_COLUMNS: PROGRAM_COLUMNS,
     ISSUE_COLUMNS: ISSUE_COLUMNS,
@@ -252,11 +228,9 @@ if (typeof module !== 'undefined') {
  * 레슨 기록 DB (Google Apps Script)
  *
  * - previewMigration()     : 드라이런. 아무것도 쓰지 않고 변환 결과 요약만 로그로 출력
- * - migrateLegacyLessons() : 원본 '레슨기록' 탭을 정형화해 새 스프레드시트(DB)를 원본과 같은 폴더에 생성
- * - addLesson(...)         : DB에 레슨 1건 추가
- * - addProgram(...)        : DB에 프로그램 1개 추가 (집계 수식 포함)
+ * - migrateLegacyLessons() : 원본 '레슨기록' 탭을 정형화해 새 스프레드시트(DB)를 원본과 같은 폴더에 생성 (2026-10-08 실행 완료)
  *
- * 원본 시트는 읽기만 하고 절대 수정하지 않는다.
+ * 레슨·프로그램 추가/수정은 레슨 수첩 앱(Api.js)이 맡는다. 원본 시트는 읽기만 하고 절대 수정하지 않는다.
  * 상태(진행중/종료)는 programs 탭에서 수기로 바꾸면 lessons 탭의 해당 레슨 전체에 수식으로 반영된다.
  */
 
@@ -269,15 +243,8 @@ var CONFIG = {
   TABS: { LESSONS: 'lessons', PROGRAMS: 'programs', ISSUES: 'migration_issues' }
 };
 
-var DB_ID_PROP = 'LESSON_DB_SPREADSHEET_ID';
-
 function todayIso_() {
   return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd');
-}
-
-function colIndex_(columns, key) {
-  for (var i = 0; i < columns.length; i++) if (columns[i].key === key) return i;
-  throw new Error('unknown column: ' + key);
 }
 
 function readLegacy_() {
@@ -302,18 +269,8 @@ function lastDataRow_(sheet) {
   return 0;
 }
 
-function dbId_() {
-  return CONFIG.DB_SPREADSHEET_ID || PropertiesService.getScriptProperties().getProperty(DB_ID_PROP);
-}
-
-function getDb_() {
-  var id = dbId_();
-  if (!id) throw new Error('DB가 없습니다. CONFIG.DB_SPREADSHEET_ID를 지정하거나 migrateLegacyLessons()를 실행하세요.');
-  return SpreadsheetApp.openById(id);
-}
-
 function migrateLegacyLessons() {
-  if (dbId_()) throw new Error('이미 DB가 있습니다: ' + dbId_());
+  if (CONFIG.DB_SPREADSHEET_ID) throw new Error('이미 DB가 있습니다: ' + CONFIG.DB_SPREADSHEET_ID);
   var r = readLegacy_();
 
   var db = SpreadsheetApp.create(CONFIG.DB_NAME);
@@ -331,8 +288,7 @@ function migrateLegacyLessons() {
   writeTable_(issues, toSheetRows(r.issues, ISSUE_COLUMNS));
   formatDb_(db);
 
-  PropertiesService.getScriptProperties().setProperty(DB_ID_PROP, db.getId());
-  Logger.log('DB 생성 완료: %s (레슨 %s건)', db.getUrl(), r.lessons.length);
+  Logger.log('DB 생성 완료: %s (레슨 %s건). CONFIG.DB_SPREADSHEET_ID에 %s를 넣으세요.', db.getUrl(), r.lessons.length, db.getId());
   return db.getUrl();
 }
 
@@ -361,78 +317,6 @@ function formatDb_(db) {
   programs.getRange('I2:J').setNumberFormat('yyyy-mm-dd');
   programs.getRange('H2:H').setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(STATUS_VALUES, true).setAllowInvalid(false).build());
-}
-
-/**
- * 레슨 1건 추가.
- * @param {string} dateIso 'YYYY-MM-DD'
- * @param {string} programId 예: 'P08'
- * @param {{payment: boolean, note: string}=} opts
- */
-function addLesson(dateIso, programId, opts) {
-  opts = opts || {};
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) throw new Error('날짜 형식은 YYYY-MM-DD');
-  var db = getDb_();
-  var program = db.getSheetByName(CONFIG.TABS.PROGRAMS).getDataRange().getValues()
-    .filter(function (p) { return p[0] === programId; })[0];
-  if (!program) throw new Error('알 수 없는 프로그램ID: ' + programId);
-
-  var sheet = db.getSheetByName(CONFIG.TABS.LESSONS);
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    var n = Math.max(lastDataRow_(sheet) - 1, 0);
-    var existing = n ? sheet.getRange(2, 1, n, 4).getDisplayValues() : [];
-    if (existing.some(function (r) { return r[1] === dateIso && r[3] === programId; })) {
-      throw new Error('이미 등록된 레슨: ' + dateIso + ' ' + programId);
-    }
-    var maxNo = existing.reduce(function (m, r) { return Math.max(m, parseInt(r[0].slice(1), 10) || 0); }, 0);
-    var row = {
-      lesson_id: 'L' + ('0000' + (maxNo + 1)).slice(-4),
-      date: dateIso,
-      program_id: programId,
-      program: program[colIndex_(PROGRAM_COLUMNS, 'program')],
-      coach: program[colIndex_(PROGRAM_COLUMNS, 'coach')],
-      payment: !!opts.payment,
-      note: opts.note || '',
-      source_cell: '수기입력 ' + todayIso_()
-    };
-    var values = toSheetRows([row], LESSON_COLUMNS)[1];
-    var target = n + 2;
-    // 배열 수식 칸(null)은 건드리지 않고, 연속된 값 구간만 쓴다
-    values.forEach(function (v, c) {
-      if (v !== null) sheet.getRange(target, c + 1).setValue(v);
-    });
-    sheet.getRange(target, 2).setNumberFormat('yyyy-mm-dd');
-    sheet.getRange(target, colIndex_(LESSON_COLUMNS, 'payment') + 1).insertCheckboxes().setValue(!!opts.payment);
-    return row.lesson_id;
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * 프로그램 추가. 예: addProgram('야구(준희 엘리트)', '준희', '문서후 코치님')
- */
-function addProgram(name, student, coach, memo) {
-  var sheet = getDb_().getSheetByName(CONFIG.TABS.PROGRAMS);
-  var last = lastDataRow_(sheet);
-  var ids = sheet.getRange(2, 1, Math.max(last - 1, 1), 1).getValues();
-  var maxNo = ids.reduce(function (m, r) { return Math.max(m, parseInt(String(r[0]).slice(1), 10) || 0); }, 0);
-  var m = /^([^(]+)\((.*)\)\s*$/.exec(name);
-  var program = {
-    program_id: 'P' + (maxNo + 1 < 10 ? '0' : '') + (maxNo + 1),
-    program: name,
-    sport: m ? m[1].trim() : name,
-    detail: m ? m[2].trim() : '',
-    student: student || '',
-    coach: coach || '',
-    memo: memo || '',
-    status: '진행중'
-  };
-  var row = last + 1;
-  sheet.getRange(row, 1, 1, PROGRAM_COLUMNS.length).setValues([toSheetRows([program], PROGRAM_COLUMNS, row)[1]]);
-  return program.program_id;
 }
 
 

@@ -44,7 +44,7 @@ demo.programs.forEach((p) => {
 if (examples[1]) { examples[1].state = '취소'; examples[1].note = '취소 예시 (데모용)'; }
 const p0 = demo.programs.find((p) => p.id === (examples[0] || {}).programId);
 if (p0) examples.push({ id: 'L' + String(++nextNo).padStart(4, '0'), date: addDays(today, -1), programId: p0.id, program: p0.name, coach: p0.coach, payment: false, note: '', source: '예시 일정', state: '예정' });
-examples.forEach((l, i) => demo.lessons.push({ ...l, row: demo.lessons.length + 2 }));
+examples.forEach((l) => demo.lessons.push({ ...l, row: demo.lessons.length + 2 }));
 const page = fs.readFileSync(path.join(__dirname, '..', 'web', 'lesson-app.html'), 'utf8');
 const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' +
   '<script>window.LESSON_DEMO=' + JSON.stringify(demo).replace(/</g, '\\u003c') + ';</script>' + page + '</body></html>';

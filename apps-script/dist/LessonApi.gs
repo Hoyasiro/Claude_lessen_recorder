@@ -7,7 +7,9 @@ var CONFIG = {
   TZ: 'Asia/Seoul',
   TABS: { LESSONS: 'lessons', PROGRAMS: 'programs', ISSUES: 'migration_issues' }
 };
-function todayIso_() { return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd'); }
+function todayIso_() {
+  return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd');
+}
 function lastDataRow_(sheet) {
   var ids = sheet.getRange('A:A').getValues();
   for (var i = ids.length - 1; i >= 0; i--) if (ids[i][0] !== '') return i + 1;

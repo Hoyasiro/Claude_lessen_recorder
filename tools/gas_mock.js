@@ -3,6 +3,7 @@
  * Apps Script 코드(apps-script/*.js)를 Node에서 돌려 보기 위한 최소 모의 환경 + HTTP 서버.
  * 시트는 메모리에만 있고 실제 Google 시트에는 아무것도 쓰지 않는다.
  * 사용: node tools/gas_mock.js <snapshot.json> [port]   → http://localhost:<port>/exec 가 웹 앱 주소 역할
+ * 환경 변수 BLOCK_POST=1 / BLOCK_GET=1: 응답에서 CORS 헤더를 빼 브라우저가 POST / GET fetch를 막는 상황을 흉내 낸다 (JSONP만 통과)
  */
 const fs = require('fs');
 const path = require('path');

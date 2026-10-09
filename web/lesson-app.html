@@ -141,6 +141,7 @@ input[type="date"], input[type="time"], input[type="text"], input[type="number"]
 .item { display: grid; grid-template-columns: 4px 1fr auto; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px 10px 0; overflow: hidden; }
 .item .bar { align-self: stretch; background: var(--pc, var(--c0)); border-radius: 0 3px 3px 0; }
 .item .t { min-width: 0; }
+.item button.t { border: 0; background: none; text-align: left; padding: 0; }
 .item .t div { font-weight: 600; overflow-wrap: anywhere; }
 .item .t small { color: var(--muted); font-size: 12px; }
 .item.cancel .t { opacity: .45; text-decoration: line-through; }
@@ -161,7 +162,7 @@ input[type="date"], input[type="time"], input[type="text"], input[type="number"]
 .dash-today .head b { font: 20px/1.2 var(--font-display); }
 .dash-today .head span { font-size: 12px; color: var(--muted); }
 .agenda { display: grid; gap: 6px; }
-.ag { display: grid; grid-template-columns: 66px 4px 1fr auto; gap: 10px; align-items: center; min-height: 40px; text-align: left; border: 0; background: none; padding: 2px 0; width: 100%; }
+.ag { display: grid; grid-template-columns: 66px 4px 1fr; gap: 10px; align-items: center; min-height: 40px; text-align: left; border: 0; background: none; padding: 2px 0; width: 100%; }
 .ag .w { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; line-height: 1.3; }
 .ag .w b { display: block; color: var(--ink); font-size: 14px; white-space: nowrap; }
 .ag .bar { align-self: stretch; border-radius: 3px; background: var(--pc, var(--c0)); }
@@ -200,6 +201,8 @@ input[type="date"], input[type="time"], input[type="text"], input[type="number"]
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .swatches button { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); }
 .swatches button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+.step { display: grid; grid-template-columns: 24px 1fr; gap: 8px; align-items: start; }
+.url { color: var(--accent); word-break: break-all; }
 
 /* 설정 */
 .set-list { display: grid; gap: 8px; }
@@ -479,7 +482,6 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const SHEET_ID = '1T7Asxbs7RtM7V6avTNQQQ-rPFQuX-WLIbEu_8tDp7ts'; // 레슨기록_DB
   const SERVER = 'Google Sheets';
   const LESSONS_SHEET_ID = 0;
-  const SETTINGS_DOC = 'config/app';
   const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
   const PALETTE = [1, 2, 3, 4, 5, 6, 7, 8];
   const DONE = '완료', PLAN = '예정', CANCEL = '취소';
@@ -520,15 +522,14 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       row: i + 1, id: r[0], name: r[1] || '', sport: r[2] || '', detail: r[3] || '', student: r[4] || '', coach: r[5] || '', memo: r[6] || '', status: r[7] || ''
     }));
   }
+  // I~L 집계 수식은 시트의 기존 행·Apps Script(addProgramRow_)와 같다
   function programValues(p, withFormulas) {
-    const r = p.row;
-    const done = 'lessons!$L:$L,"' + DONE + '"';
-    const v = [p.id, p.name, p.sport, p.detail, p.student, p.coach, p.memo, p.status];
+    const r = p.row, v = [p.id, p.name, p.sport, p.detail, p.student, p.coach, p.memo, p.status];
     if (withFormulas) v.push(
-      '=IF($K' + r + '=0,"",MINIFS(lessons!$B:$B,lessons!$D:$D,$A' + r + ',' + done + '))',
-      '=IF($K' + r + '=0,"",MAXIFS(lessons!$B:$B,lessons!$D:$D,$A' + r + ',' + done + '))',
-      '=COUNTIFS(lessons!$D:$D,$A' + r + ',' + done + ')',
-      '=COUNTIFS(lessons!$D:$D,$A' + r + ',lessons!$H:$H,TRUE,' + done + ')');
+      '=IF($K' + r + '=0,"",MINIFS(lessons!$B:$B,lessons!$D:$D,$A' + r + '))',
+      '=IF($K' + r + '=0,"",MAXIFS(lessons!$B:$B,lessons!$D:$D,$A' + r + '))',
+      '=COUNTIF(lessons!$D:$D,$A' + r + ')',
+      '=COUNTIFS(lessons!$D:$D,$A' + r + ',lessons!$H:$H,TRUE)');
     return v;
   }
   function splitName(name) { const m = /^([^(]+)\((.*)\)\s*$/.exec(name); return m ? { sport: m[1].trim(), detail: m[2].trim() } : { sport: name.trim(), detail: '' }; }
@@ -558,12 +559,11 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const call = async (tool, input) => (await mcp.callTool(SERVER, tool, input, { cache: false })).payload;
     const getCol = async (range) => ((await call('get_values', { spreadsheetId: SHEET_ID, range })) || {}).values || [];
     const lastRow = (vals) => { let last = 1; vals.forEach((r, i) => { if (r && r[0]) last = i + 1; }); return last; };
-    async function check(l) {
-      const ids = await getCol('lessons!A:A');
-      if (!ids[l.row - 1] || ids[l.row - 1][0] !== l.id) throw { code: 'moved', message: '시트가 바뀌었어요. 새로고침 후 다시 시도해 주세요.' };
+    async function check(tab, x) {
+      const ids = await getCol(tab + '!A:A');
+      if (!ids[x.row - 1] || ids[x.row - 1][0] !== x.id) throw { code: 'moved', message: '시트가 바뀌었어요. 새로고침 후 다시 시도해 주세요.' };
     }
     return {
-      demo: false,
       async load() {
         const [pv, lv] = await Promise.all([getCol('programs!A:L'), getCol('lessons!A:L')]);
         return { programs: parsePrograms(pv), lessons: parseLessons(lv) };
@@ -574,11 +574,11 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         return list.map((_, i) => start + i);
       },
       async update(l) {
-        await check(l);
+        await check('lessons', l);
         await call('update_values', { spreadsheetId: SHEET_ID, range: 'lessons!A' + l.row + ':L' + l.row, values: [lessonValues(l)] });
       },
       async remove(l) {
-        await check(l);
+        await check('lessons', l);
         await call('update_spreadsheet', { spreadsheetId: SHEET_ID, requests: [{ deleteDimension: { range: { sheetId: LESSONS_SHEET_ID, dimension: 'ROWS', startIndex: l.row - 1, endIndex: l.row } } }] });
       },
       async addProgram(p) {
@@ -587,8 +587,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         return p.row;
       },
       async updateProgram(p) {
-        const ids = await getCol('programs!A:A');
-        if (!ids[p.row - 1] || ids[p.row - 1][0] !== p.id) throw { code: 'moved', message: '시트가 바뀌었어요. 새로고침 후 다시 시도해 주세요.' };
+        await check('programs', p);
         await call('update_values', { spreadsheetId: SHEET_ID, range: 'programs!A' + p.row + ':H' + p.row, values: [programValues(p, false)] });
       },
       // 앱 설정 JSON은 시트 app_config 탭 A1에 둔다 (설치형 앱과 같은 곳)
@@ -605,48 +604,45 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   // 설치형 앱(PWA): Apps Script 웹 앱 API로 시트를 읽고 쓴다
   function apiStore(cfg) {
     // 기본은 POST. 브라우저가 POST를 막으면 같은 요청을 GET(?payload=)으로 보낸다.
+    // fetch가 막히면 GET(fetch) → JSONP(script 태그) 순서로 내려가고, 한 번 내려간 방식을 계속 쓴다
     let mode = 'post';
-    async function parse(res) {
-      let j; try { j = await res.json(); } catch (e) { throw { code: 'api', message: '서버 응답을 읽지 못했어요 (' + res.status + ')' }; }
+    const getUrl = (body, extra) => cfg.api + '?token=' + encodeURIComponent(cfg.token) + (extra || '') + '&payload=' + encodeURIComponent(JSON.stringify(body));
+    function check(body, j) {
       if (j.error) throw { code: j.error === 'unauthorized' ? 'unauthorized' : 'api', message: j.error };
+      if (body.action === 'load' && !j.lessons) throw { code: 'old_server' }; // 예전 서버는 payload를 몰라 {ok:true}만 준다
       return j;
     }
-    // GET(fetch) → 안 되면 JSONP(script 태그) 순서로 시도
+    async function parse(body, res) {
+      let j; try { j = await res.json(); } catch (e) { throw { code: 'api', message: '서버 응답을 읽지 못했어요 (' + res.status + ')' }; }
+      return check(body, j || {});
+    }
     function viaJsonp(body) {
       return new Promise((resolve, reject) => {
         const cb = '__lesson' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
         const sc = document.createElement('script');
-        const done = (fn, v) => { clearTimeout(t); delete window[cb]; sc.remove(); fn(v); };
-        const t = setTimeout(() => done(reject, { code: 'blocked' }), 30000);
-        window[cb] = (j) => {
-          if (j && j.error) return done(reject, { code: j.error === 'unauthorized' ? 'unauthorized' : 'api', message: j.error });
-          if (body.action === 'load' && j && !j.lessons) return done(reject, { code: 'old_server' }); // 예전 서버는 payload를 몰라 {ok:true}만 준다
-          done(resolve, j);
-        };
-        sc.onerror = () => done(reject, { code: 'blocked' });
-        sc.src = cfg.api + '?token=' + encodeURIComponent(cfg.token) + '&callback=' + cb + '&payload=' + encodeURIComponent(JSON.stringify(body));
+        const finish = (fn) => { clearTimeout(t); delete window[cb]; sc.remove(); fn(); };
+        const t = setTimeout(() => finish(() => reject({ code: 'blocked' })), 30000);
+        window[cb] = (j) => finish(() => { try { resolve(check(body, j || {})); } catch (e) { reject(e); } });
+        sc.onerror = () => finish(() => reject({ code: 'blocked' }));
+        sc.src = getUrl(body, '&callback=' + cb);
         document.head.appendChild(sc);
       });
     }
-    async function viaGet(body) {
-      if (mode === 'jsonp') return viaJsonp(body);
-      const url = cfg.api + '?token=' + encodeURIComponent(cfg.token) + '&payload=' + encodeURIComponent(JSON.stringify(body));
-      let res; try { res = await fetch(url); } catch (e) { mode = 'jsonp'; return viaJsonp(body); }
-      const j = await parse(res);
-      if (body.action === 'load' && !j.lessons) throw { code: 'old_server' }; // 예전 서버는 payload를 몰라 {ok:true}만 준다
-      return j;
-    }
     async function post(action, extra) {
       const body = { action, ...(extra || {}) };
-      if (mode !== 'post') return viaGet(body);
-      let res;
-      try { res = await fetch(cfg.api, { method: 'POST', body: JSON.stringify({ token: cfg.token, ...body }) }); }
-      catch (e) { mode = 'get'; return viaGet(body); }
-      return parse(res);
+      if (mode === 'post') {
+        try { return await parse(body, await fetch(cfg.api, { method: 'POST', body: JSON.stringify({ token: cfg.token, ...body }) })); }
+        catch (e) { if (e && e.code) throw e; mode = 'get'; }
+      }
+      if (mode === 'get') {
+        try { return await parse(body, await fetch(getUrl(body))); }
+        catch (e) { if (e && e.code) throw e; mode = 'jsonp'; }
+      }
+      return viaJsonp(body);
     }
     let last = null;
     return {
-      demo: false, api: true, post,
+      api: true, post,
       async load() { last = post('load'); const j = await last; return { programs: parsePrograms(j.programs), lessons: parseLessons(j.lessons) }; },
       async loadSettings() { const j = await (last || post('load')); return j.settings && j.settings.programs ? j.settings : { programs: {} }; },
       async add(list) { return (await post('addLessons', { list })).rows; },
@@ -672,10 +668,9 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   function errorText(e) {
     const code = e && e.code;
-    if (code === 'moved' || code === 'no_db') return e.message;
-    if (code === 'offline') return '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.';
+    if (code === 'moved') return e.message;
     if (code === 'old_server') return '서버 코드가 예전 버전이에요. Apps Script 코드를 새 버전으로 바꾸고 다시 배포해 주세요. [고치는 방법]을 눌러 보세요.';
-    if (code === 'blocked') return '이 브라우저가 서버 요청을 막고 있어요. 삼성 인터넷이면 설정 → 개인정보 보호 → 스마트 안티 트래킹을 끄거나, 이 사이트를 예외로 추가해 주세요.';
+    if (code === 'blocked') return '서버에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.';
     if (code === 'unauthorized') return '연결 정보가 맞지 않아요. 연결 링크를 휴대폰에서 다시 열어 주세요.';
     if (code === 'api') return '서버가 요청을 처리하지 못했어요: ' + (e.message || '');
     if (code === 'needs_reauth') return 'Google Sheets 연결이 만료됐어요. claude.ai 설정 → 커넥터에서 다시 연결해 주세요.';
@@ -689,9 +684,9 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   // ---------- 상태 ----------
   const S = {
-    store: null, programs: [], lessons: [], settings: { programs: {} }, loadedAt: null, busy: false,
+    store: null, mcp: null, programs: [], lessons: [], settings: { programs: {} }, loadedAt: null, loadError: false, busy: false,
     tab: 'cal', settingsOpen: false, pick: null, dupOk: false, repeat: 1,
-    listLimit: 60, calMonth: monthKey(todayIso()), calSel: todayIso(), showEndedSet: false
+    listLimit: 60, calMonth: monthKey(todayIso()), calSel: todayIso(), showEndedSet: false, showQuiet: false
   };
   const $ = (id) => document.getElementById(id);
   const el = (tag, attrs, ...kids) => {
@@ -710,16 +705,19 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const isEnded = (p) => p && p.status === '종료';
   // 우선순위: 진행중(직접 지정) → 상태 미지정 → 종료, 같은 단계에서는 최근 레슨 순
   const rank = (p) => (p.status === '진행중' ? 0 : isEnded(p) ? 2 : 1);
-  const lastActivity = (pid) => S.lessons.reduce((m, l) => (l.programId === pid && l.state !== CANCEL && l.date > m ? l.date : m), '');
-  const byPriority = (a, b) => rank(a) - rank(b) || lastActivity(b.id).localeCompare(lastActivity(a.id)) || a.id.localeCompare(b.id);
-  const sortedPrograms = () => S.programs.slice().sort(byPriority);
+  function byPriority(list) {
+    const last = {};
+    S.lessons.forEach((l) => { if (l.state !== CANCEL && l.date > (last[l.programId] || '')) last[l.programId] = l.date; });
+    return list.slice().sort((a, b) => rank(a) - rank(b) || (last[b.id] || '').localeCompare(last[a.id] || '') || a.id.localeCompare(b.id));
+  }
+  const sortedPrograms = () => byPriority(S.programs);
   const shortName = (pid) => conf(pid).short || ((progById(pid) || {}).detail || (progById(pid) || {}).name || pid).replace(/\s+/g, '').slice(0, 3);
   const done = (l) => l.state === DONE;
   const slotsOf = (pid) => (conf(pid).slots || []).filter((x) => x && x.dow != null);
   const slotTime = (pid, iso) => { const s = slotsOf(pid).find((x) => +x.dow === dow(iso)); return s ? s.time || '' : ''; };
   const slotText = (pid) => slotsOf(pid).slice().sort((a, b) => ((+a.dow + 6) % 7) - ((+b.dow + 6) % 7)).map((x) => WEEK[x.dow] + (x.time ? ' ' + x.time : '')).join(', ');
   const timeOf = (l) => slotTime(l.programId, l.date);
-  const byTime = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (timeOf(a) || '99') < (timeOf(b) || '99') ? -1 : (timeOf(a) || '99') > (timeOf(b) || '99') ? 1 : a.programId.localeCompare(b.programId));
+  const byTime = (a, b) => a.date.localeCompare(b.date) || (timeOf(a) || '99').localeCompare(timeOf(b) || '99') || a.programId.localeCompare(b.programId);
 
   // 색: 앱 설정에 저장된 슬롯이 우선. 없으면 최근 12개월 레슨 수 순으로 남은 슬롯을 배정(필터와 무관하게 고정)
   function colorSlots() {
@@ -777,18 +775,15 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const PERM_CODES = ['not_in_manifest', 'not_granted', 'capability_disabled', 'approval_required', 'consent_required', 'needs_reauth', 'server_not_connected', 'selection_required'];
   async function showLoadError(e) {
     const code = e && e.code;
-    if (S.store && S.store.api && (code === 'old_server' || code === 'blocked')) {
-      banner(errorText(e), true, code === 'old_server' ? [['고치는 방법', openUpdateGuide], ['다시 시도', reload]] : [['다시 시도', reload]]);
-      return;
-    }
-    if (S.store && S.store.api && code === 'offline') {
+    if (S.store && S.store.api && code === 'old_server') { banner(errorText(e), true, [['고치는 방법', openUpdateGuide], ['다시 시도', reload]]); return; }
+    if (S.store && S.store.api && code === 'blocked') {
       // 설치형 앱: 서버 주소를 브라우저로 직접 열어 보면 원인을 알 수 있다
       const cfg = apiConfig();
-      const probe = cfg ? cfg.api + '?action=ping&token=' + encodeURIComponent(cfg.token) : '';
+      const probe = cfg ? cfg.api + '?token=' + encodeURIComponent(cfg.token) : '';
       const isDev = cfg && /\/dev(\?|$)/.test(cfg.api);
       banner((isDev
         ? '연결 링크의 서버 주소가 테스트용(/dev)이라 앱에서 열 수 없어요. 배포 관리에서 웹 앱 URL(/exec로 끝나는 주소)을 복사해 [서버 주소 바꾸기]에 붙여 넣어 주세요.'
-        : '서버(Apps Script)가 응답하지 않아요. [서버 확인]을 눌러 새 창에 {"ok":true}가 보이면 서버는 정상이에요. 다른 화면이 보이면 캡처해 주세요.') +
+        : '서버(Apps Script)에 연결하지 못했어요. [서버 확인]을 눌러 새 창에 {"ok":true}가 보이면 서버는 정상이니, 인터넷 연결이나 브라우저의 추적 방지 설정을 확인해 주세요. 다른 화면이 보이면 캡처해 주세요.') +
         ' 현재 서버 주소: …' + (cfg ? cfg.api.slice(-24) : ''), true,
         [['서버 주소 바꾸기', openApiUrlEditor], ['서버 확인', () => { if (probe) window.open(probe, '_blank'); }], ['고치는 방법', openFixGuide], ['다시 시도', reload]]);
       return;
@@ -897,7 +892,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   // ---------- 입력 ----------
   function renderAdd() {
     const today = todayIso(), date = $('inDate').value, future = date > today;
-    const stats = programStats().filter((p) => !isEnded(p)).sort(byPriority);
+    const stats = byPriority(programStats().filter((p) => !isEnded(p)));
     const list = $('progList'); list.replaceChildren();
     if (!stats.length) list.append(el('div', { class: 'empty', text: S.loadedAt ? '진행 중인 프로그램이 없어요. 오른쪽 위 설정에서 새 프로그램을 시작하세요.' : '프로그램 목록을 불러오는 중이에요.' }));
     stats.forEach((p) => {
@@ -998,7 +993,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       else if (st === CANCEL) acts.append(el('button', { type: 'button', class: 'mini', text: '되살리기', onclick: () => setState(l, l.date > todayIso() ? PLAN : DONE) }));
       box.append(el('div', { class: 'item' + (st === CANCEL ? ' cancel' : ''), style: '--pc:' + colorVar(l.programId) },
         el('span', { class: 'bar' }),
-        el('button', { type: 'button', class: 't', style: 'border:0;background:none;text-align:left;padding:0', onclick: () => openEdit(l) },
+        el('button', { type: 'button', class: 't', onclick: () => openEdit(l) },
           el('div', { text: l.program }),
           el('small', { text: [timeOf(l), studentOf(l.programId), l.payment ? '결제' : '', l.note].filter(Boolean).join(' · ') || l.coach })),
         el('div', { style: 'display:grid;gap:6px;justify-items:end' },
@@ -1064,16 +1059,13 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   }
 
   async function generateSchedule(p, weeks) {
-    const sl = slotsOf(p.id); if (!p || !sl.length) return 0;
+    const days = new Set(p ? slotsOf(p.id).map((x) => +x.dow) : []); if (!days.size) return 0;
     const today = todayIso(), taken = new Set(S.lessons.filter((l) => l.programId === p.id && l.state !== CANCEL).map((l) => l.date));
     const dates = [];
-    for (let d = addDays(today, 1); d <= addDays(today, weeks * 7); d = addDays(d, 1)) {
-      const s = sl.find((x) => +x.dow === dow(d));
-      if (s && !taken.has(d)) dates.push({ d });
-    }
+    for (let d = addDays(today, 1); d <= addDays(today, weeks * 7); d = addDays(d, 1)) if (days.has(dow(d)) && !taken.has(d)) dates.push(d);
     if (!dates.length) return 0;
     const ids = nextIds(dates.length);
-    const list = dates.map((x, i) => ({ id: ids[i], date: x.d, programId: p.id, program: p.name, coach: p.coach, payment: false, note: '', source: '레슨 주기 ' + today, state: PLAN }));
+    const list = dates.map((d, i) => ({ id: ids[i], date: d, programId: p.id, program: p.name, coach: p.coach, payment: false, note: '', source: '레슨 주기 ' + today, state: PLAN }));
     const rows = await S.store.add(list);
     list.forEach((l, i) => { l.row = rows[i]; S.lessons.push(l); });
     return list.length;
@@ -1085,7 +1077,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   }
   function renderDash() {
     const today = todayIso(), until = addDays(today, 7), box = $('dash'); box.replaceChildren();
-    const upcoming = S.lessons.filter((l) => l.date >= today && l.date <= until && l.state !== DONE || (l.date === today && l.state === DONE)).sort(byTime);
+    const upcoming = S.lessons.filter((l) => l.date >= today && l.date <= until && (l.state !== DONE || l.date === today)).sort(byTime);
     const planned7 = upcoming.filter((l) => l.state === PLAN).length;
     const card = el('div', { class: 'card dash-today' },
       el('div', { class: 'head' }, el('b', { text: '오늘 ' + md(today) + ' (' + WEEK[dow(today)] + ')' }), el('span', { text: '앞으로 7일 예정 ' + planned7 + '회' })));
@@ -1094,8 +1086,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     upcoming.slice(0, 8).forEach((l) => ag.append(el('button', { type: 'button', class: 'ag' + (l.state === CANCEL ? ' cancel' : ''), style: '--pc:' + colorVar(l.programId), onclick: () => { S.calMonth = monthKey(l.date); S.calSel = l.date; renderCal(); openEdit(l); } },
       el('span', { class: 'w' }, el('b', { text: dayLabel(l.date) }), timeOf(l)),
       el('span', { class: 'bar' }),
-      el('span', { class: 't' }, el('div', { text: l.program }), el('small', { text: [studentOf(l.programId), l.state === CANCEL ? '취소' : l.state === DONE ? '완료' : '', l.payment ? '결제' : ''].filter(Boolean).join(' · ') })),
-      el('span')))); 
+      el('span', { class: 't' }, el('div', { text: l.program }), el('small', { text: [studentOf(l.programId), l.state === CANCEL ? '취소' : l.state === DONE ? '완료' : '', l.payment ? '결제' : ''].filter(Boolean).join(' · ') })))));
     if (upcoming.length > 8) ag.append(el('div', { class: 'hint', text: '외 ' + (upcoming.length - 8) + '건은 달력에서 볼 수 있어요.' }));
     card.append(ag); box.append(card);
 
@@ -1161,21 +1152,23 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const draw = (v) => wrap.replaceChildren(...options.map(([k, t]) => el('button', { type: 'button', 'aria-pressed': String(k === v), text: t, onclick: () => { onChange(k); draw(k); } })));
     draw(value); return wrap;
   }
-  // 설치형 앱 처음 연결 안내 (PC에서 한 번)
+  // ---------- 설치형 앱 안내 시트 ----------
+  const SERVER_CODE_URL = 'https://raw.githubusercontent.com/Hoyasiro/Claude_lessen_recorder/ccr-86cf1ca5-ng9k2d/apps-script/dist/LessonApi.gs';
+  const step = (n, ...kids) => el('div', { class: 'step' }, el('b', { text: n + '.' }), el('div', null, ...kids));
+  const link = (u) => el('a', { href: u, target: '_blank', rel: 'noopener', class: 'url', text: u });
+  const closeBtn = () => el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet });
+  // 처음 연결 (PC에서 한 번)
   function openSetupGuide() {
-    const RAW = 'https://raw.githubusercontent.com/Hoyasiro/Claude_lessen_recorder/ccr-86cf1ca5-ng9k2d/apps-script/dist/LessonApi.gs';
-    const step = (n, ...kids) => el('div', { style: 'display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:start' }, el('b', { text: n + '.' }), el('div', null, ...kids));
-    const link = (u) => el('a', { href: u, target: '_blank', rel: 'noopener', style: 'color:var(--accent);word-break:break-all', text: u });
     openSheet(
       el('h3', { text: '시트 연결하기 (처음 한 번)' }),
       el('div', { class: 'hint', text: 'PC에서 k51405699@gmail.com 계정으로 진행하세요. 5분 정도 걸려요.' }),
       step(1, '새 Apps Script 프로젝트 열기: ', link('https://script.google.com/home/projects/create')),
-      step(2, '편집기 코드를 모두 지우고 아래 파일 내용을 전체 복사해 붙여 넣은 뒤 저장(Ctrl+S): ', link(RAW)),
+      step(2, '편집기 코드를 모두 지우고 아래 파일 내용을 전체 복사해 붙여 넣은 뒤 저장(Ctrl+S): ', link(SERVER_CODE_URL)),
       step(3, '배포 → 새 배포 → 톱니 → 웹 앱. 실행: 나, 액세스: 모든 사용자 → 배포 → 권한 허용 ("확인되지 않은 앱"이면 고급 → 이동 → 허용)'),
       step(4, '위쪽 함수 목록에서 setup 선택 → 실행 → 실행 로그의 연결 링크 복사'),
       step(5, '그 링크를 이 휴대폰으로 보내 이 브라우저에서 열기 → 연결 완료'),
       el('div', { class: 'hint', text: '연결 링크에는 비밀 토큰이 들어 있으니 다른 사람에게 보내지 마세요.' }),
-      el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }));
+      closeBtn());
   }
   function openApiUrlEditor() {
     const cfg = apiConfig() || {};
@@ -1187,7 +1180,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       el('div', { class: 'field' }, el('label', { for: 'apiUrl', text: '웹 앱 URL' }), input),
       err,
       el('div', { class: 'btn-row' },
-        el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }),
+        closeBtn(),
         el('button', { type: 'button', class: 'primary', text: '저장하고 연결', onclick: () => {
           const u = input.value.trim();
           if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)) { err.textContent = 'https://script.google.com/로 시작하고 /exec로 끝나는 주소를 넣어 주세요.'; err.hidden = false; return; }
@@ -1199,18 +1192,15 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         } })));
   }
   function openUpdateGuide() {
-    const RAW = 'https://raw.githubusercontent.com/Hoyasiro/Claude_lessen_recorder/ccr-86cf1ca5-ng9k2d/apps-script/dist/LessonApi.gs';
-    const step = (n, ...kids) => el('div', { style: 'display:grid;grid-template-columns:24px 1fr;gap:8px' }, el('b', { text: n + '.' }), el('div', null, ...kids));
     openSheet(
       el('h3', { text: '서버 코드 업데이트' }),
       el('div', { class: 'hint', text: 'Apps Script 편집기(데스크톱 모드)에서 하세요. 연결 링크와 서버 주소는 그대로예요.' }),
-      step(1, '편집기 코드를 모두 지우고 아래 내용을 전체 붙여 넣은 뒤 저장(💾): ', el('a', { href: RAW, target: '_blank', rel: 'noopener', style: 'color:var(--accent);word-break:break-all', text: RAW })),
+      step(1, '편집기 코드를 모두 지우고 아래 내용을 전체 붙여 넣은 뒤 저장(💾): ', link(SERVER_CODE_URL)),
       step(2, '배포 → 배포 관리 → 연필(수정) → 버전 "새 버전" → 배포'),
       step(3, '이 앱으로 돌아와 [다시 시도]'),
-      el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }));
+      closeBtn());
   }
   function openFixGuide() {
-    const step = (n, t) => el('div', { style: 'display:grid;grid-template-columns:24px 1fr;gap:8px' }, el('b', { text: n + '.' }), el('div', { text: t }));
     openSheet(
       el('h3', { text: '배포 설정 고치기' }),
       el('div', { class: 'hint', text: 'Apps Script 편집기(데스크톱 모드)에서 하세요. 연결 링크는 그대로 써도 돼요.' }),
@@ -1220,7 +1210,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       step(4, '실행 사용자: 나 / 액세스 권한이 있는 사용자: "모든 사용자" (Google 계정이 있는 모든 사용자 X)'),
       step(5, '배포 → 이 앱으로 돌아와 [다시 시도]'),
       el('div', { class: 'hint', text: '그래도 안 되면 [서버 확인]을 눌렀을 때 나오는 화면을 캡처해 주세요.' }),
-      el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }));
+      closeBtn());
   }
   function closeSheet() { $('sheetRoot').replaceChildren(); }
   function openSheet(...kids) {
@@ -1248,7 +1238,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       confirmBox,
       el('div', { class: 'btn-row' },
         el('button', { type: 'button', class: 'danger', text: '삭제', onclick: () => { confirmBox.hidden = false; } }),
-        el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }),
+        closeBtn(),
         el('button', { type: 'button', class: 'primary', text: '저장', onclick: () => {
           if (!isIso(date.value)) return;
           const next = { ...l, date: date.value, payment: pay.checked, note: note.value.trim(), state };
@@ -1267,12 +1257,11 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   // ---------- 설정 ----------
   function renderSettings() {
     renderPush();
-    const stats = programStats();
     const row = (p) => el('button', { type: 'button', class: 'set-row' + (isEnded(p) ? ' ended' : ''), style: '--pc:' + colorVar(p.id), onclick: () => openProgram(p) },
       el('span', { class: 'n', text: p.name + (conf(p.id).short ? ' · ' + conf(p.id).short : '') }),
       el('span', { class: 'state' + (p.status === '진행중' ? ' plan' : ''), text: p.status || '상태 미지정' }),
       el('small', { text: [p.student || '대상 미입력', slotText(p.id) || '레슨 주기 미설정', p.cycle ? p.cycle + '회마다 결제' : '결제 주기 미설정', p.lastDate ? '최근 ' + p.lastDate : ''].filter(Boolean).join(' · ') }));
-    stats.sort(byPriority);
+    const stats = byPriority(programStats());
     const active = stats.filter((p) => !isEnded(p)), ended = stats.filter(isEnded);
     $('setActive').replaceChildren(...(active.length ? active.map(row) : [el('div', { class: 'empty', text: '진행 중인 프로그램이 없어요.' })]));
     $('setEnded').replaceChildren(...ended.map(row));
@@ -1349,7 +1338,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       el('div', { class: 'field' }, el('label', { for: 'pgMemo', text: '메모' }), memo),
       err,
       el('div', { class: 'btn-row' },
-        el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }),
+        closeBtn(),
         el('button', { type: 'button', class: 'primary', text: isNew ? '시작하기' : '저장', onclick: () => submit(false) })));
   }
 
@@ -1409,7 +1398,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   }
   function statCycle({ progs, rows }) {
     // 직접 '진행중'으로 정했거나 기간 안에 레슨이 있는 프로그램만
-    const cyc = programStats().filter((p) => !isEnded(p) && progs.some((x) => x.id === p.id) && (p.status === '진행중' || rows.some((l) => l.programId === p.id))).sort(byPriority);
+    const cyc = byPriority(programStats().filter((p) => !isEnded(p) && progs.some((x) => x.id === p.id) && (p.status === '진행중' || rows.some((l) => l.programId === p.id))));
     const box = $('cycleBox'); box.replaceChildren();
     if (!cyc.length) box.append(el('div', { class: 'empty', text: '진행 중인 프로그램이 없어요.' }));
     cyc.forEach((p) => {
@@ -1438,7 +1427,8 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     // 기간 안에 기록이 없고 직접 '진행중'도 아닌 프로그램은 접어 둔다
     const quiet = progs.filter((p) => p.status !== '진행중' && !S.lessons.some((l) => l.programId === p.id && l.date >= from && l.date <= today && l.state !== PLAN));
     (S.showQuiet ? progs : progs.filter((p) => !quiet.includes(p))).forEach((p) => {
-      const mine = S.lessons.filter((l) => l.programId === p.id && l.date >= from && l.date <= today);
+      const own = S.lessons.filter((l) => l.programId === p.id), ownDone = own.filter(done);
+      const mine = own.filter((l) => l.date >= from && l.date <= today);
       const dn = mine.filter(done), cn = mine.filter((l) => l.state === CANCEL).length;
       const pays = dn.filter((l) => l.payment).length;
       const activeMonths = new Set(dn.map((l) => monthKey(l.date))).size;
@@ -1446,9 +1436,9 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       const perMonth = activeMonths ? (dn.length / activeMonths).toFixed(1) : '0';
       const dc = [0, 0, 0, 0, 0, 0, 0]; dn.forEach((l) => dc[dow(l.date)]++);
       const topDow = dn.length ? [1, 2, 3, 4, 5, 6, 0].filter((i) => dc[i] === Math.max(...dc)).map((i) => WEEK[i]).join('·') : '-';
-      const weeks = Array.from({ length: 12 }, (_, i) => { const a = addDays(weekStart, i * 7), b = addDays(a, 6); return S.lessons.filter((l) => l.programId === p.id && done(l) && l.date >= a && l.date <= b).length; });
+      const weeks = Array.from({ length: 12 }, (_, i) => { const a = addDays(weekStart, i * 7), b = addDays(a, 6); return ownDone.filter((l) => l.date >= a && l.date <= b).length; });
       const wmax = Math.max(1, ...weeks);
-      const last = S.lessons.reduce((m, l) => (l.programId === p.id && done(l) && l.date > m ? l.date : m), '');
+      const last = ownDone.reduce((m, l) => (l.date > m ? l.date : m), '');
       box.append(el('button', { type: 'button', class: 'pstat' + (isEnded(p) ? ' ended' : ''), style: '--pc:' + colorVar(p.id),
         onclick: () => { if (pg === 'active' || pg === 'all') { $('sProg').value = p.id; renderStats(); } } },
         el('div', { class: 'top' }, el('b', { text: p.name }), el('span', { class: 'state' + (p.status === '진행중' ? ' plan' : ''), text: p.status || '미지정' })),
