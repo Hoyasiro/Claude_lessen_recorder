@@ -17,12 +17,35 @@
 
 ## 레슨 수첩 앱
 
-- 주소: https://claude.ai/artifact/K7AqxrWKAsnAmxTbpcYz8z (비공개, Claude 앱/claude.ai에서 열기)
-- 소스: `web/lesson-app.html` — Google Sheets 커넥터로 `레슨기록_DB`를 직접 읽고 쓴다.
-- 앱 설정(결제 주기·레슨 주기·색·짧은 이름)은 페이지 DB의 `config/app` 문서(JSON)에 저장한다.
+같은 화면 코드(`web/lesson-app.html`)를 두 가지로 쓴다.
+
+| 버전 | 주소 | 데이터 연결 | 휴대폰 알림 |
+|---|---|---|---|
+| 설치형 앱(PWA) | https://hoyasiro.github.io/Claude_lessen_recorder/ | Apps Script 웹 앱 API | O (레슨 수첩 푸시) |
+| Claude 페이지 | https://claude.ai/artifact/K7AqxrWKAsnAmxTbpcYz8z | Google Sheets 커넥터 | X |
+
+- 앱 설정(결제 주기·레슨 주기·색·짧은 이름)은 시트 `app_config` 탭 A1의 JSON. 두 버전이 함께 쓴다.
 - lessons 탭 L열 `진행`(완료/예정/취소). 레슨 시간은 저장하지 않고 레슨 주기에서 계산한다.
-- 휴대폰 알림: 설정의 "휴대폰 알림"을 켜면 오늘~90일 안의 예정 레슨을 Google 캘린더 기본 캘린더에 등록하고 1주 전·하루 전·당일 오전 9시 팝업 알림을 건다. 레슨ID↔일정ID 연결은 페이지 DB `calendar` 컬렉션. 취소·삭제하면 일정도 지운다.
-- 로컬 데모: `node tools/build_demo.js <snapshot.json> <out.html>` (시트에 쓰지 않음, 결과물은 커밋 금지)
+- 알림: 매일 오전 9시쯤(±15분) 오늘·내일·7일 뒤의 예정 레슨을 한 번에 알린다. 알릴 레슨이 없으면 보내지 않는다.
+
+### 설치형 앱 처음 설정 (한 번만)
+
+1. **GitHub Pages 켜기**: 저장소 Settings → Pages → Source "Deploy from a branch" → 브랜치 `ccr-86cf1ca5-ng9k2d`, 폴더 `/docs` → Save.
+2. **Apps Script 만들기** (레슨기록_DB 소유 계정으로 로그인):
+   - https://script.google.com → 새 프로젝트 → 이름 "레슨 수첩 API"
+   - `Code.gs` 내용을 지우고 `apps-script/dist/LessonApp.gs` 전체를 붙여 넣기
+   - 프로젝트 설정(톱니) → "appsscript.json 매니페스트 파일 표시" 체크 → `appsscript.json`을 `apps-script/appsscript.json` 내용으로 바꾸기
+   - 배포 → 새 배포 → 유형 "웹 앱", 실행: 나, 액세스: 모든 사용자 → 배포 → 권한 허용
+3. 편집기에서 함수 `setup` 선택 → 실행 → 실행 로그의 **연결 링크**를 복사
+4. 휴대폰 크롬에서 연결 링크 열기 → 메뉴 → "홈 화면에 추가"(앱 설치)
+5. 설치한 레슨 수첩 → 설정(톱니) → 휴대폰 알림 → **알림 켜기** → **테스트 알림**으로 확인
+
+연결 링크에는 비밀 토큰이 들어 있으니 공유하지 않는다. 유출이 의심되면 편집기에서 `resetToken` 실행 후 새 링크로 다시 연결.
+코드를 고친 뒤에는 `node tools/build_gas.js` / `node tools/build_pwa.js` 로 다시 만든다. Apps Script는 붙여 넣은 뒤 배포 → 배포 관리 → 새 버전.
+
+### 개발용
+- 로컬 데모: `node tools/build_demo.js <snapshot.json> <out.html>` (시트에 쓰지 않음, 결과물 커밋 금지)
+- API 모의 서버: `node tools/gas_mock.js <snapshot.json> [port]` (Apps Script 코드를 메모리 시트로 실행)
 
 ## 레슨 추가
 

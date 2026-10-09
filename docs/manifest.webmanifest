@@ -1,0 +1,16 @@
+{
+  "name": "레슨 수첩",
+  "short_name": "레슨 수첩",
+  "description": "준희네 레슨 일정·기록·통계",
+  "lang": "ko",
+  "start_url": "./#cal",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f5f1",
+  "theme_color": "#1f6b4f",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
