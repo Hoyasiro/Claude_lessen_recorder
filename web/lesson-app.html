@@ -743,6 +743,14 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const PERM_CODES = ['not_in_manifest', 'not_granted', 'capability_disabled', 'approval_required', 'consent_required', 'needs_reauth', 'server_not_connected', 'selection_required'];
   async function showLoadError(e) {
     const code = e && e.code;
+    if (S.store && S.store.api && code === 'offline') {
+      // 설치형 앱: 서버 주소를 브라우저로 직접 열어 보면 원인을 알 수 있다
+      const cfg = apiConfig();
+      const probe = cfg ? cfg.api + '?action=ping&token=' + encodeURIComponent(cfg.token) : '';
+      banner('서버(Apps Script)가 응답하지 않아요. 대부분 배포의 "액세스 권한"이 "모든 사용자"가 아니라서예요. [서버 확인]을 눌러 새 창에 {"ok":true}가 보이면 정상, 구글 로그인이나 권한 화면이 보이면 배포 설정을 고쳐야 해요.', true,
+        [['서버 확인', () => { if (probe) window.open(probe, '_blank'); }], ['고치는 방법', openFixGuide], ['다시 시도', reload]]);
+      return;
+    }
     if (!S.mcp || !PERM_CODES.includes(code)) { banner(errorText(e), true, [['다시 시도', reload]]); return; }
     let detail = '';
     try {
@@ -1125,6 +1133,19 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       step(4, '위쪽 함수 목록에서 setup 선택 → 실행 → 실행 로그의 연결 링크 복사'),
       step(5, '그 링크를 이 휴대폰으로 보내 이 브라우저에서 열기 → 연결 완료'),
       el('div', { class: 'hint', text: '연결 링크에는 비밀 토큰이 들어 있으니 다른 사람에게 보내지 마세요.' }),
+      el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }));
+  }
+  function openFixGuide() {
+    const step = (n, t) => el('div', { style: 'display:grid;grid-template-columns:24px 1fr;gap:8px' }, el('b', { text: n + '.' }), el('div', { text: t }));
+    openSheet(
+      el('h3', { text: '배포 설정 고치기' }),
+      el('div', { class: 'hint', text: 'Apps Script 편집기(데스크톱 모드)에서 하세요. 연결 링크는 그대로 써도 돼요.' }),
+      step(1, '오른쪽 위 배포 → 배포 관리'),
+      step(2, '연필(수정) 아이콘 누르기'),
+      step(3, '버전: "새 버전" 선택'),
+      step(4, '실행 사용자: 나 / 액세스 권한이 있는 사용자: "모든 사용자" (Google 계정이 있는 모든 사용자 X)'),
+      step(5, '배포 → 이 앱으로 돌아와 [다시 시도]'),
+      el('div', { class: 'hint', text: '그래도 안 되면 [서버 확인]을 눌렀을 때 나오는 화면을 캡처해 주세요.' }),
       el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }));
   }
   function closeSheet() { $('sheetRoot').replaceChildren(); }
