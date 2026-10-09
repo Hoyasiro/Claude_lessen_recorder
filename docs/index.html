@@ -1056,7 +1056,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const card = el('div', { class: 'card dash-today' },
       el('div', { class: 'head' }, el('b', { text: '오늘 ' + md(today) + ' (' + WEEK[dow(today)] + ')' }), el('span', { text: '앞으로 7일 예정 ' + planned7 + '회' })));
     const ag = el('div', { class: 'agenda' });
-    if (!upcoming.length) ag.append(el('div', { class: 'hint', text: S.loadedAt ? '앞으로 7일 동안 잡힌 레슨이 없어요. 설정에서 레슨 주기를 정하고 일정을 만들 수 있어요.' : '일정을 불러오는 중이에요.' }));
+    if (!upcoming.length) ag.append(el('div', { class: 'hint', text: S.loadedAt ? '앞으로 7일 동안 잡힌 레슨이 없어요. 설정에서 레슨 주기를 정하고 일정을 만들 수 있어요.' : S.loadError ? '시트와 연결되면 일정이 여기에 보여요.' : '일정을 불러오는 중이에요.' }));
     upcoming.slice(0, 8).forEach((l) => ag.append(el('button', { type: 'button', class: 'ag' + (l.state === CANCEL ? ' cancel' : ''), style: '--pc:' + colorVar(l.programId), onclick: () => { S.calMonth = monthKey(l.date); S.calSel = l.date; renderCal(); openEdit(l); } },
       el('span', { class: 'w' }, el('b', { text: dayLabel(l.date) }), timeOf(l)),
       el('span', { class: 'bar' }),
@@ -1126,6 +1126,22 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const wrap = el('div', { class: 'seg' });
     const draw = (v) => wrap.replaceChildren(...options.map(([k, t]) => el('button', { type: 'button', 'aria-pressed': String(k === v), text: t, onclick: () => { onChange(k); draw(k); } })));
     draw(value); return wrap;
+  }
+  // 설치형 앱 처음 연결 안내 (PC에서 한 번)
+  function openSetupGuide() {
+    const RAW = 'https://raw.githubusercontent.com/Hoyasiro/Claude_lessen_recorder/ccr-86cf1ca5-ng9k2d/apps-script/dist/LessonApi.gs';
+    const step = (n, ...kids) => el('div', { style: 'display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:start' }, el('b', { text: n + '.' }), el('div', null, ...kids));
+    const link = (u) => el('a', { href: u, target: '_blank', rel: 'noopener', style: 'color:var(--accent);word-break:break-all', text: u });
+    openSheet(
+      el('h3', { text: '시트 연결하기 (처음 한 번)' }),
+      el('div', { class: 'hint', text: 'PC에서 k51405699@gmail.com 계정으로 진행하세요. 5분 정도 걸려요.' }),
+      step(1, '새 Apps Script 프로젝트 열기: ', link('https://script.google.com/home/projects/create')),
+      step(2, '편집기 코드를 모두 지우고 아래 파일 내용을 전체 복사해 붙여 넣은 뒤 저장(Ctrl+S): ', link(RAW)),
+      step(3, '배포 → 새 배포 → 톱니 → 웹 앱. 실행: 나, 액세스: 모든 사용자 → 배포 → 권한 허용 ("확인되지 않은 앱"이면 고급 → 이동 → 허용)'),
+      step(4, '위쪽 함수 목록에서 setup 선택 → 실행 → 실행 로그의 연결 링크 복사'),
+      step(5, '그 링크를 이 휴대폰으로 보내 이 브라우저에서 열기 → 연결 완료'),
+      el('div', { class: 'hint', text: '연결 링크에는 비밀 토큰이 들어 있으니 다른 사람에게 보내지 마세요.' }),
+      el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }));
   }
   function closeSheet() { $('sheetRoot').replaceChildren(); }
   function openSheet(...kids) {
@@ -1556,7 +1572,11 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     if (window.LESSON_DEMO) { S.store = demoStore(window.LESSON_DEMO); return reload(); }
     const cfg = window.LESSON_PWA ? apiConfig() : null;
     if (window.LESSON_PWA) {
-      if (!cfg) { banner('아직 시트와 연결되지 않았어요. Apps Script에서 받은 연결 링크를 이 휴대폰에서 한 번 열어 주세요.', true); $('syncText').textContent = '연결 안 됨'; return; }
+      if (!cfg) {
+        S.loadError = true; render();
+        banner('아직 시트와 연결되지 않았어요. 처음 한 번 PC에서 연결 설정을 하고, 받은 연결 링크를 이 휴대폰에서 열어 주세요.', true, [['연결 방법 보기', openSetupGuide]]);
+        return;
+      }
       S.store = apiStore(cfg);
       if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: 'config', api: cfg.api, token: cfg.token });
       navigator.serviceWorker && navigator.serviceWorker.ready.then((reg) => { reg.active && reg.active.postMessage({ type: 'config', api: cfg.api, token: cfg.token }); refreshPush(); });

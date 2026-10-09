@@ -1,5 +1,5 @@
 /* 레슨 수첩 서비스워커: 오프라인 화면 캐시 + 아침 알림(푸시) 표시 */
-const SHELL = 'lesson-shell-v2';
+const SHELL = 'lesson-shell-v3';
 const CFG = 'lesson-cfg';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './badge-96.png'];
 
