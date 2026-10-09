@@ -127,6 +127,9 @@ function setup() {
   ScriptApp.newTrigger('dailyPush').timeBased().everyDays(1).atHour(APP.NOTIFY_HOUR).nearMinute(0).inTimezone(CONFIG.TZ).create();
   var api = ScriptApp.getService().getUrl();
   if (!api) { Logger.log('먼저 "배포 → 새 배포 → 웹 앱"으로 배포한 뒤 setup()을 다시 실행하세요.'); return; }
+  if (/\/dev$/.test(api)) {
+    Logger.log('주의: 테스트용 주소(/dev)가 잡혔어요. 배포 → 배포 관리에서 웹 앱 URL(/exec)을 복사해, 앱의 [서버 주소 바꾸기]에 붙여 넣으세요.');
+  }
   var link = APP.PAGES_URL + '#connect=' + IO_.b64url(JSON.stringify({ api: api, token: p.getProperty('API_TOKEN') }));
   Logger.log('연결 링크 (휴대폰에서 열기, 다른 사람과 공유하지 마세요):\n' + link);
 }

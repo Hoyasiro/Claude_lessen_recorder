@@ -763,8 +763,12 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       // 설치형 앱: 서버 주소를 브라우저로 직접 열어 보면 원인을 알 수 있다
       const cfg = apiConfig();
       const probe = cfg ? cfg.api + '?action=ping&token=' + encodeURIComponent(cfg.token) : '';
-      banner('서버(Apps Script)가 응답하지 않아요. 대부분 배포의 "액세스 권한"이 "모든 사용자"가 아니라서예요. [서버 확인]을 눌러 새 창에 {"ok":true}가 보이면 정상, 구글 로그인이나 권한 화면이 보이면 배포 설정을 고쳐야 해요.', true,
-        [['서버 확인', () => { if (probe) window.open(probe, '_blank'); }], ['고치는 방법', openFixGuide], ['다시 시도', reload]]);
+      const isDev = cfg && /\/dev(\?|$)/.test(cfg.api);
+      banner((isDev
+        ? '연결 링크의 서버 주소가 테스트용(/dev)이라 앱에서 열 수 없어요. 배포 관리에서 웹 앱 URL(/exec로 끝나는 주소)을 복사해 [서버 주소 바꾸기]에 붙여 넣어 주세요.'
+        : '서버(Apps Script)가 응답하지 않아요. [서버 확인]을 눌러 새 창에 {"ok":true}가 보이면 서버는 정상이에요. 다른 화면이 보이면 캡처해 주세요.') +
+        ' 현재 서버 주소: …' + (cfg ? cfg.api.slice(-24) : ''), true,
+        [['서버 주소 바꾸기', openApiUrlEditor], ['서버 확인', () => { if (probe) window.open(probe, '_blank'); }], ['고치는 방법', openFixGuide], ['다시 시도', reload]]);
       return;
     }
     if (!S.mcp || !PERM_CODES.includes(code)) { banner(errorText(e), true, [['다시 시도', reload]]); return; }
@@ -1150,6 +1154,27 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       step(5, '그 링크를 이 휴대폰으로 보내 이 브라우저에서 열기 → 연결 완료'),
       el('div', { class: 'hint', text: '연결 링크에는 비밀 토큰이 들어 있으니 다른 사람에게 보내지 마세요.' }),
       el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }));
+  }
+  function openApiUrlEditor() {
+    const cfg = apiConfig() || {};
+    const input = el('input', { type: 'text', id: 'apiUrl', value: cfg.api || '', placeholder: 'https://script.google.com/macros/s/…/exec', inputmode: 'url', autocomplete: 'off' });
+    const err = el('div', { class: 'warn', hidden: true });
+    openSheet(
+      el('h3', { text: '서버 주소 바꾸기' }),
+      el('div', { class: 'hint', text: 'Apps Script 편집기 → 배포 → 배포 관리 → 웹 앱의 URL을 복사해 붙여 넣으세요. /exec로 끝나야 해요. 연결 토큰은 그대로 써요.' }),
+      el('div', { class: 'field' }, el('label', { for: 'apiUrl', text: '웹 앱 URL' }), input),
+      err,
+      el('div', { class: 'btn-row' },
+        el('button', { type: 'button', class: 'secondary', text: '닫기', onclick: closeSheet }),
+        el('button', { type: 'button', class: 'primary', text: '저장하고 연결', onclick: () => {
+          const u = input.value.trim();
+          if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)) { err.textContent = 'https://script.google.com/로 시작하고 /exec로 끝나는 주소를 넣어 주세요.'; err.hidden = false; return; }
+          if (!cfg.token) { err.textContent = '연결 토큰이 없어요. 연결 링크를 먼저 한 번 열어 주세요.'; err.hidden = false; return; }
+          const next = { api: u, token: cfg.token };
+          try { localStorage.setItem('lesson-api', JSON.stringify(next)); } catch (e) {}
+          if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: 'config', api: next.api, token: next.token });
+          closeSheet(); S.store = apiStore(next); reload();
+        } })));
   }
   function openFixGuide() {
     const step = (n, t) => el('div', { style: 'display:grid;grid-template-columns:24px 1fr;gap:8px' }, el('b', { text: n + '.' }), el('div', { text: t }));
