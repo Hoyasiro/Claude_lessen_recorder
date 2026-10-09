@@ -77,7 +77,7 @@ function makeDb(snapshot) {
   };
 }
 
-function loadGas(db, base, pushLog) {
+function loadGas(db, base, pushLog, files) {
   const props = {};
   const ctx = {
     console, BigInt, JSON, Math, Date,
@@ -101,7 +101,7 @@ function loadGas(db, base, pushLog) {
     UrlFetchApp: { fetch: (url, opt) => { pushLog.push({ url, auth: opt.headers.Authorization }); return { getResponseCode: () => 201, getContentText: () => '' }; } }
   };
   vm.createContext(ctx);
-  for (const f of ['Normalize.js', 'Code.js', 'WebPush.js', 'Api.js']) {
+  for (const f of files || ['Normalize.js', 'Code.js', 'WebPush.js', 'Api.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'apps-script', f), 'utf8').replace(/if \(typeof module[^\n]*\n?(\s*module\.exports[\s\S]*?\n\})?/g, ''), ctx, { filename: f });
   }
   return { ctx, props };

@@ -33,7 +33,7 @@
 1. **GitHub Pages 켜기**: 저장소 Settings → Pages → Source "Deploy from a branch" → 브랜치 `ccr-86cf1ca5-ng9k2d`, 폴더 `/docs` → Save.
 2. **Apps Script 만들기** (레슨기록_DB 소유 계정으로 로그인):
    - https://script.google.com → 새 프로젝트 → 이름 "레슨 수첩 API"
-   - `Code.gs` 내용을 지우고 `apps-script/dist/LessonApp.gs` 전체를 붙여 넣기
+   - `Code.gs` 내용을 지우고 `apps-script/dist/LessonApi.gs` 전체를 붙여 넣기 (API·알림 전용 경량판. 이관 함수까지 필요하면 `LessonApp.gs`)
    - 프로젝트 설정(톱니) → "appsscript.json 매니페스트 파일 표시" 체크 → `appsscript.json`을 `apps-script/appsscript.json` 내용으로 바꾸기
    - 배포 → 새 배포 → 유형 "웹 앱", 실행: 나, 액세스: 모든 사용자 → 배포 → 권한 허용
 3. 편집기에서 함수 `setup` 선택 → 실행 → 실행 로그의 **연결 링크**를 복사
