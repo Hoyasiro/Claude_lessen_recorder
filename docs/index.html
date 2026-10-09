@@ -746,12 +746,34 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   // ---------- 공통 렌더 ----------
   function setSync() {
     const t = S.loadedAt;
-    $('syncText').textContent = S.busy ? '동기화 중…' : !t ? '불러오는 중…' : (S.store && S.store.demo ? '데모 · ' : '') + pad(t.getHours()) + ':' + pad(t.getMinutes());
+    $('syncText').textContent = S.busy ? '동기화 중…' : !t ? (S.loadError ? '연결 안 됨' : '불러오는 중…') : (S.store && S.store.demo ? '데모 · ' : '') + pad(t.getHours()) + ':' + pad(t.getMinutes());
   }
-  function banner(msg, isError) {
+  function banner(msg, isError, actions) {
     const b = $('banner');
     if (!msg) { b.hidden = true; return; }
-    b.textContent = msg; b.className = 'banner' + (isError ? ' error' : ''); b.hidden = false;
+    b.replaceChildren(el('div', { text: msg }));
+    if (actions && actions.length) b.append(el('div', { class: 'btn-row', style: 'margin-top:10px' }, ...actions.map(([t, fn]) => el('button', { type: 'button', class: 'secondary', text: t, onclick: fn }))));
+    b.className = 'banner' + (isError ? ' error' : ''); b.hidden = false;
+  }
+  // Claude 페이지에서 Google Sheets 권한 문제가 나면: 원인 코드를 보여 주고 권한 창을 바로 열 수 있게 한다
+  const PERM_CODES = ['not_in_manifest', 'not_granted', 'capability_disabled', 'approval_required', 'consent_required', 'needs_reauth', 'server_not_connected', 'selection_required'];
+  async function showLoadError(e) {
+    const code = e && e.code;
+    if (!S.mcp || !PERM_CODES.includes(code)) { banner(errorText(e), true, [['다시 시도', reload]]); return; }
+    let detail = '';
+    try {
+      const lt = await S.mcp.listTools();
+      const names = (lt.servers || []).filter((x) => x.kind !== 'artifact').map((x) => x.server + '(' + x.authStatus + ', 도구 ' + (x.tools || []).length + '개)');
+      detail = names.length ? ' 이 페이지에서 보이는 연결: ' + names.join(', ') + '.' : ' 이 페이지에서 보이는 Google 연결이 없어요.';
+    } catch (err) { detail = ''; }
+    const perms = window.claude && window.claude.use ? await window.claude.use('permissions').catch(() => null) : null;
+    const actions = [];
+    if (perms) {
+      actions.push(['Google Sheets 허용하기', async () => { try { await perms.request(['mcp:' + SERVER]); } catch (err) {} reload(); }]);
+      actions.push(['권한 설정 열기', async () => { try { await perms.manage(); } catch (err) {} reload(); }]);
+    }
+    actions.push(['다시 시도', reload]);
+    banner(errorText(e) + ' (원인 코드: ' + code + ')' + detail, true, actions);
   }
   function toast(msg, action) {
     const root = $('toastRoot'); root.replaceChildren();
@@ -1492,9 +1514,9 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     S.busy = true; setSync();
     try {
       const [d, st] = await Promise.all([S.store.load(), S.store.loadSettings().catch(() => ({ programs: {} }))]);
-      S.programs = d.programs; S.lessons = d.lessons; S.settings = st; S.loadedAt = new Date(); SLOT = colorSlots();
+      S.programs = d.programs; S.lessons = d.lessons; S.settings = st; S.loadedAt = new Date(); S.loadError = false; SLOT = colorSlots();
       banner(S.store.demo ? '데모 모드예요. 저장·이동·취소·설정 변경은 이 화면에서만 반영되고 시트에는 쓰지 않아요. 미래 일정은 예시예요.' : null);
-    } catch (e) { banner(errorText(e), true); }
+    } catch (e) { S.loadedAt = null; S.loadError = true; await showLoadError(e); }
     S.busy = false; render();
   }
 
@@ -1543,6 +1565,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const use = window.claude && window.claude.use;
     const mcp = use ? await use('mcp') : null;
     if (!mcp) { banner('이 화면에서는 Google Sheets에 연결할 수 없어요. Claude 앱이나 claude.ai에서 열어 주세요.', true); $('syncText').textContent = '연결 안 됨'; return; }
+    S.mcp = mcp;
     S.store = sheetStore(mcp);
     reload();
   }
