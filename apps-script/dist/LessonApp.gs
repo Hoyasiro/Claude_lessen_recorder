@@ -606,31 +606,38 @@ function resetToken() { props_().deleteProperty('API_TOKEN'); setup(); }
 // ---------- 라우팅 ----------
 function doGet(e) {
   var q = (e && e.parameter) || {};
-  if (q.token !== props_().getProperty('API_TOKEN')) return json_({ error: 'unauthorized' });
-  if (q.action === 'digest') return json_(digest_(todayIso_()));
+  // JSONP(?callback=이름): 브라우저가 fetch를 막을 때 <script>로 불러간다
+  var out = function (obj) {
+    if (q.callback && /^[A-Za-z_$][\w$]{0,40}$/.test(q.callback)) {
+      return ContentService.createTextOutput(q.callback + '(' + JSON.stringify(obj) + ');').setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return json_(obj);
+  };
+  if (q.token !== props_().getProperty('API_TOKEN')) return out({ error: 'unauthorized' });
+  if (q.action === 'digest') return out(digest_(todayIso_()));
   // POST가 막히는 브라우저용: ?payload=<JSON> 으로 같은 요청을 받는다
   if (q.payload) {
-    var b; try { b = JSON.parse(q.payload); } catch (err) { return json_({ error: 'bad_json' }); }
+    var b; try { b = JSON.parse(q.payload); } catch (err) { return out({ error: 'bad_json' }); }
     b.token = q.token;
-    return run_(b);
+    return out(run_(b));
   }
-  return json_({ ok: true, version: 2 });
+  return out({ ok: true, version: 3 });
 }
 
 function doPost(e) {
   var body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { return json_({ error: 'bad_json' }); }
-  return run_(body);
+  return json_(run_(body));
 }
 
 function run_(body) {
-  if (body.token !== props_().getProperty('API_TOKEN')) return json_({ error: 'unauthorized' });
+  if (body.token !== props_().getProperty('API_TOKEN')) return { error: 'unauthorized' };
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(20000);
-    return json_(handle_(body));
+    return handle_(body);
   } catch (err) {
-    return json_({ error: String(err && err.message || err) });
+    return { error: String(err && err.message || err) };
   } finally {
     lock.releaseLock();
   }

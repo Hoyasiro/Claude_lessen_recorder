@@ -627,16 +627,34 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       if (j.error) throw { code: j.error === 'unauthorized' ? 'unauthorized' : 'api', message: j.error };
       return j;
     }
+    // GET(fetch) → 안 되면 JSONP(script 태그) 순서로 시도
+    function viaJsonp(body) {
+      return new Promise((resolve, reject) => {
+        const cb = '__lesson' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+        const sc = document.createElement('script');
+        const done = (fn, v) => { clearTimeout(t); delete window[cb]; sc.remove(); fn(v); };
+        const t = setTimeout(() => done(reject, { code: 'blocked' }), 30000);
+        window[cb] = (j) => {
+          if (j && j.error) return done(reject, { code: j.error === 'unauthorized' ? 'unauthorized' : 'api', message: j.error });
+          if (j && j.ok === true && j.version == null && Object.keys(j).length === 1) return done(reject, { code: 'old_server' });
+          done(resolve, j);
+        };
+        sc.onerror = () => done(reject, { code: 'blocked' });
+        sc.src = cfg.api + '?token=' + encodeURIComponent(cfg.token) + '&callback=' + cb + '&payload=' + encodeURIComponent(JSON.stringify(body));
+        document.head.appendChild(sc);
+      });
+    }
     async function viaGet(body) {
+      if (mode === 'jsonp') return viaJsonp(body);
       const url = cfg.api + '?token=' + encodeURIComponent(cfg.token) + '&payload=' + encodeURIComponent(JSON.stringify(body));
-      let res; try { res = await fetch(url); } catch (e) { throw { code: 'blocked' }; }
+      let res; try { res = await fetch(url); } catch (e) { mode = 'jsonp'; return viaJsonp(body); }
       const j = await parse(res);
       if (j.ok === true && j.version == null && Object.keys(j).length === 1) throw { code: 'old_server' }; // payload를 모르는 예전 서버
       return j;
     }
     async function post(action, extra) {
       const body = { action, ...(extra || {}) };
-      if (mode === 'get') return viaGet(body);
+      if (mode !== 'post') return viaGet(body);
       let res;
       try { res = await fetch(cfg.api, { method: 'POST', body: JSON.stringify({ token: cfg.token, ...body }) }); }
       catch (e) { mode = 'get'; return viaGet(body); }

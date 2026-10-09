@@ -85,7 +85,7 @@ function loadGas(db, base, pushLog, files) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); }, deleteProperty: (k) => { delete props[k]; } }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Logger: { log: (...a) => console.log('[gas]', ...a) },
-    ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
+    ContentService: { MimeType: { JSON: 'json', JAVASCRIPT: 'js' }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
     ScriptApp: {
       getProjectTriggers: () => [], deleteTrigger() {},
       newTrigger: () => { const t = { timeBased: () => t, everyDays: () => t, atHour: () => t, nearMinute: () => t, inTimezone: () => t, create: () => t }; return t; },
@@ -120,7 +120,12 @@ if (require.main === module) {
     if (u.pathname === '/__push') { res.writeHead(200, cors); return res.end(JSON.stringify(pushLog)); }
     if (u.pathname === '/__db') { res.writeHead(200, cors); return res.end(JSON.stringify({ lessons: db.sheets.lessons.rows.slice(-3), subs: (db.sheets.push_subs || {}).rows })); }
     if (u.pathname !== '/exec') { res.writeHead(404); return res.end(); }
-    if (req.method === 'GET') { res.writeHead(200, cors); return res.end(ctx.doGet({ parameter: Object.fromEntries(u.searchParams) }).text); }
+    if (req.method === 'GET') {
+      // BLOCK_GET=1: fetch GET도 CORS로 막히는 상황(스크립트 태그 JSONP만 통과)
+      const jsonp = u.searchParams.has('callback');
+      const h = jsonp ? { 'Content-Type': 'text/javascript' } : process.env.BLOCK_GET ? { 'Content-Type': 'application/json' } : cors;
+      res.writeHead(200, h); return res.end(ctx.doGet({ parameter: Object.fromEntries(u.searchParams) }).text);
+    }
     // BLOCK_POST=1: CORS 헤더 없이 응답해 브라우저가 POST를 막는 상황을 흉내 낸다
     let body = ''; req.on('data', (c) => (body += c)); req.on('end', () => { res.writeHead(200, process.env.BLOCK_POST ? { 'Content-Type': 'application/json' } : cors); res.end(ctx.doPost({ postData: { contents: body } }).text); });
   }).listen(+port, () => console.log('mock api on ' + base + '/exec token=' + props.API_TOKEN));
