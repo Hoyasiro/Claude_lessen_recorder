@@ -445,6 +445,14 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   <!-- 설정 -->
   <section class="panel" id="panel-settings" hidden>
+    <div class="card" style="display:grid;gap:10px">
+      <div class="toggle">
+        <div><div class="lab">휴대폰 알림 (Google 캘린더)</div><div class="hint">예정 레슨을 캘린더에 등록하고 1주 전·하루 전·당일 오전 9시에 알림을 걸어요.</div></div>
+        <label class="switch"><input type="checkbox" id="calOn" aria-label="휴대폰 알림"><span></span></label>
+      </div>
+      <div class="hint" id="calStatus"></div>
+      <button type="button" class="secondary" id="calSyncBtn" hidden>지금 캘린더 맞추기</button>
+    </div>
     <h2 class="sec"><span>진행 중인 프로그램</span></h2>
     <div class="set-list" id="setActive"></div>
     <button type="button" class="secondary" id="newProgBtn">＋ 새 프로그램 시작</button>
@@ -716,8 +724,112 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   }
   async function run(fn) {
     S.busy = true; render();
-    try { await fn(); if (!S.store.demo) banner(null); } catch (e) { banner(errorText(e), true); }
+    let ok = false;
+    try { await fn(); ok = true; if (!S.store.demo) banner(null); } catch (e) { banner(errorText(e), true); }
     S.busy = false; render();
+    if (ok) syncCalendar();
+  }
+
+  // ---------- 휴대폰 알림: Google 캘린더 ----------
+  // 예정 레슨(오늘~90일)을 기본 캘린더에 일정으로 두고, 1주 전·하루 전·당일 오전 9시 팝업 알림을 건다.
+  // 레슨ID → 캘린더 일정ID 연결은 앱 DB의 calendar 컬렉션에 저장한다.
+  const CAL_SERVER = 'Google Calendar', CAL_DAYS = 90, NOTIFY_AT = 9 * 60;
+  let CAL = null; // { create(spec), remove(eventId), loadMap(), saveMap(id, v), dropMap(id) }
+  const calOn = () => !!(S.settings.calendar && S.settings.calendar.enabled);
+  function eventSpec(l) {
+    const p = progById(l.programId) || {}, t = timeOf(l);
+    const summary = '[레슨] ' + (p.name || l.program) + (p.student ? ' · ' + p.student : '');
+    const description = '레슨 수첩 ' + l.id + (p.coach ? ' · ' + p.coach : '') + (l.payment ? ' · 결제 예정' : '') + (l.note ? ' · ' + l.note : '');
+    let spec;
+    if (t) {
+      const T = (+t.slice(0, 2)) * 60 + (+t.slice(3, 5));
+      const endM = T + 60, endDate = endM >= 1440 ? addDays(l.date, 1) : l.date, e = endM % 1440;
+      spec = { summary, description, startTime: l.date + 'T' + t + ':00', endTime: endDate + 'T' + pad(Math.floor(e / 60)) + ':' + pad(e % 60) + ':00',
+        reminders: [7 * 1440 + T - NOTIFY_AT, 1440 + T - NOTIFY_AT, T - NOTIFY_AT].filter((m) => m >= 0) };
+    } else {
+      // 하루 종일 일정: 자정 기준이라 당일 9시는 -540분
+      spec = { summary, description, allDay: true, startTime: l.date + 'T00:00:00', endTime: addDays(l.date, 1) + 'T00:00:00',
+        reminders: [7 * 1440 - NOTIFY_AT, 1440 - NOTIFY_AT, -NOTIFY_AT] };
+    }
+    spec.sig = JSON.stringify([spec.summary, spec.description, spec.startTime, spec.endTime, spec.reminders]);
+    return spec;
+  }
+  function sheetCalendar(mcp, db) {
+    const col = db ? db.collection('calendar') : null;
+    return {
+      async create(spec) {
+        const input = { summary: spec.summary, description: spec.description, startTime: spec.startTime, endTime: spec.endTime,
+          overrideReminders: spec.reminders.map((m) => ({ method: 'popup', minutes: m })), notificationLevel: 'NONE' };
+        if (spec.allDay) input.allDay = true;
+        const r = (await mcp.callTool(CAL_SERVER, 'create_event', input, { cache: false })).payload || {};
+        if (!r.id) throw { code: 'tool_error', message: '캘린더 일정 ID를 받지 못했어요.' };
+        return r.id;
+      },
+      async remove(eventId) {
+        try { await mcp.callTool(CAL_SERVER, 'delete_event', { eventId, notificationLevel: 'NONE' }, { cache: false }); }
+        catch (e) { if (e.code !== 'tool_error') throw e; } // 이미 지운 일정은 무시
+      },
+      async loadMap() {
+        if (!col) throw { code: 'no_db', message: '알림 연결 정보를 저장할 수 없어요. 로그인한 상태에서 열어 주세요.' };
+        const snap = await col.get(), map = {};
+        snap.docs.forEach((d) => { map[d.id] = d.data(); });
+        return map;
+      },
+      saveMap: (id, v) => col.doc(id).set(v),
+      dropMap: (id) => col.doc(id).delete()
+    };
+  }
+  function demoCalendar() {
+    const map = {}; let n = 0;
+    return { async create() { return 'demo-' + (++n); }, async remove() {}, async loadMap() { return { ...map }; },
+      async saveMap(id, v) { map[id] = v; }, async dropMap(id) { delete map[id]; } };
+  }
+  let calBusy = false, calAgain = false;
+  async function syncCalendar(opts) {
+    const off = opts && opts.turnOff;
+    if (!CAL || (!calOn() && !off)) return;
+    if (calBusy) { calAgain = true; return; }
+    calBusy = true; S.calStatus = '캘린더 맞추는 중…'; renderCalStatus();
+    let made = 0, changed = 0, removed = 0;
+    try {
+      const today = todayIso(), until = addDays(today, CAL_DAYS);
+      const want = off ? [] : S.lessons.filter((l) => l.state === PLAN && l.date >= today && l.date <= until);
+      const wantIds = new Set(want.map((l) => l.id));
+      const map = await CAL.loadMap();
+      for (const l of want) {
+        const spec = eventSpec(l), m = map[l.id];
+        if (m && m.sig === spec.sig) continue;
+        if (m) { await CAL.remove(m.eventId); changed++; } else made++;
+        const eventId = await CAL.create(spec);
+        await CAL.saveMap(l.id, { eventId, sig: spec.sig, date: l.date });
+      }
+      for (const [id, m] of Object.entries(map)) {
+        if (wantIds.has(id)) continue;
+        const l = S.lessons.find((x) => x.id === id);
+        // 지워졌거나 취소됐거나 알림을 끄면 일정을 지운다. 완료·지난 레슨은 일정을 남기고 연결만 정리.
+        if (off || !l || l.state === CANCEL || (l.state === PLAN && l.date >= today)) { await CAL.remove(m.eventId); removed++; }
+        await CAL.dropMap(id);
+      }
+      const t = new Date();
+      S.calStatus = (off ? '알림을 껐어요. 등록했던 예정 일정 ' + removed + '건을 지웠어요.' : '등록된 예정 레슨 ' + want.length + '건 · ' + pad(t.getHours()) + ':' + pad(t.getMinutes()) + ' 맞춤') +
+        (made || changed || (removed && !off) ? ' (추가 ' + made + ', 변경 ' + changed + ', 삭제 ' + removed + ')' : '');
+    } catch (e) {
+      S.calStatus = '캘린더를 맞추지 못했어요: ' + errorText({ ...e, message: e && e.message }).replace('Google Sheets', 'Google 캘린더');
+    }
+    calBusy = false; renderCalStatus();
+    if (calAgain) { calAgain = false; syncCalendar(); }
+  }
+  function renderCalStatus() {
+    if (!$('calOn')) return;
+    $('calOn').checked = calOn();
+    $('calStatus').textContent = S.calStatus || (calOn() ? '' : '꺼져 있어요. 켜면 앞으로 ' + CAL_DAYS + '일 안의 예정 레슨이 캘린더에 등록돼요.');
+    $('calSyncBtn').hidden = !calOn();
+  }
+  async function setCalendar(on) {
+    const next = { ...S.settings, calendar: { enabled: on } };
+    try { await S.store.saveSettings(next); S.settings = next; }
+    catch (e) { banner(errorText(e), true); renderCalStatus(); return; }
+    if (on) syncCalendar(); else syncCalendar({ turnOff: true });
   }
   function nextIds(n) {
     let max = S.lessons.reduce((m, l) => Math.max(m, parseInt(l.id.slice(1), 10) || 0), 0);
@@ -1041,6 +1153,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   // ---------- 설정 ----------
   function renderSettings() {
+    renderCalStatus();
     const stats = programStats();
     const row = (p) => el('button', { type: 'button', class: 'set-row' + (isEnded(p) ? ' ended' : ''), style: '--pc:' + colorVar(p.id), onclick: () => openProgram(p) },
       el('span', { class: 'n', text: p.name + (conf(p.id).short ? ' · ' + conf(p.id).short : '') }),
@@ -1385,6 +1498,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       const [d, st] = await Promise.all([S.store.load(), S.store.loadSettings().catch(() => ({ programs: {} }))]);
       S.programs = d.programs; S.lessons = d.lessons; S.settings = st; S.loadedAt = new Date(); SLOT = colorSlots();
       banner(S.store.demo ? '데모 모드예요. 저장·이동·취소·설정 변경은 이 화면에서만 반영되고 시트에는 쓰지 않아요. 미래 일정은 예시예요.' : null);
+      syncCalendar();
     } catch (e) { banner(errorText(e), true); }
     S.busy = false; render();
   }
@@ -1399,6 +1513,8 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   $('refreshBtn').addEventListener('click', reload);
   $('settingsBtn').addEventListener('click', () => { S.settingsOpen = !S.settingsOpen; render(); });
   $('newProgBtn').addEventListener('click', () => openProgram(null));
+  $('calOn').addEventListener('change', () => setCalendar($('calOn').checked));
+  $('calSyncBtn').addEventListener('click', () => syncCalendar());
   $('toggleEndedSet').addEventListener('click', () => { S.showEndedSet = !S.showEndedSet; renderSettings(); });
   $('calPrev').addEventListener('click', () => { S.calMonth = shiftMonth(S.calMonth, -1); renderCal(); });
   $('calNext').addEventListener('click', () => { S.calMonth = shiftMonth(S.calMonth, 1); renderCal(); });
@@ -1422,11 +1538,12 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   // ---------- 시작 ----------
   async function boot() {
     render();
-    if (window.LESSON_DEMO) { S.store = demoStore(window.LESSON_DEMO); return reload(); }
+    if (window.LESSON_DEMO) { S.store = demoStore(window.LESSON_DEMO); CAL = demoCalendar(); return reload(); }
     const use = window.claude && window.claude.use;
     const [mcp, db] = use ? await Promise.all([use('mcp'), use('db')]) : [null, null];
     if (!mcp) { banner('이 화면에서는 Google Sheets에 연결할 수 없어요. Claude 앱이나 claude.ai에서 열어 주세요.', true); $('syncText').textContent = '연결 안 됨'; return; }
     S.store = sheetStore(mcp, db);
+    CAL = sheetCalendar(mcp, db);
     reload();
   }
   boot();
