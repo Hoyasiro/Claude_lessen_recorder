@@ -19,6 +19,7 @@
   --danger: #b42f2f;
   --danger-soft: #f8e1e1;
   --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; --c5: #e87ba4; --c6: #008300; --c7: #4a3aa7; --c8: #e34948; --c0: #b9b7ae;
+  --h0: #ebeae4; --h1: #b7d3f6; --h2: #6da7ec; --h3: #2a78d6; --h4: #184f95;
   --font-display: "Do Hyeon", "IBM Plex Sans KR", system-ui, sans-serif;
   --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --radius: 12px;
@@ -30,6 +31,7 @@
     --line: #2c2c2a; --axis: #383835; --accent: #4fb58a; --accent-ink: #0d1a14; --accent-soft: #1d3329;
     --pay: #e39a5c; --pay-soft: #3a2616; --danger: #e66767; --danger-soft: #3a1c1c;
     --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #e66767; --c0: #5d5c57;
+    --h0: #262624; --h1: #184f95; --h2: #256abf; --h3: #3987e5; --h4: #86b6ef;
     color-scheme: dark;
   }
 }
@@ -38,6 +40,7 @@
   --line: #2c2c2a; --axis: #383835; --accent: #4fb58a; --accent-ink: #0d1a14; --accent-soft: #1d3329;
   --pay: #e39a5c; --pay-soft: #3a2616; --danger: #e66767; --danger-soft: #3a1c1c;
   --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #e66767; --c0: #5d5c57;
+  --h0: #262624; --h1: #184f95; --h2: #256abf; --h3: #3987e5; --h4: #86b6ef;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -267,6 +270,27 @@ input[type="date"], input[type="time"], input[type="text"], input[type="number"]
 .cancel-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 6px 0; border-top: 1px solid var(--line); }
 .cancel-row:first-child { border-top: 0; }
 
+.heat-wrap { overflow-x: auto; padding-bottom: 4px; }
+.heat { display: grid; grid-template-columns: 22px auto; column-gap: 4px; width: max-content; }
+.heat-col { display: grid; gap: 4px; }
+.heat-months { display: grid; grid-auto-flow: column; grid-auto-columns: 13px; gap: 3px; font-size: 10px; color: var(--muted); height: 14px; }
+.heat-months span { white-space: nowrap; overflow: visible; }
+.heat-days { position: sticky; left: 0; z-index: 1; background: var(--surface); padding-right: 4px; margin-top: 18px; display: grid; grid-template-rows: repeat(7, 13px); gap: 3px; font-size: 10px; color: var(--muted); line-height: 13px; }
+.heat-grid { display: grid; grid-template-rows: repeat(7, 13px); grid-auto-flow: column; grid-auto-columns: 13px; gap: 3px; }
+.hc { width: 13px; height: 13px; border-radius: 3px; background: var(--h0); border: 0; padding: 0; }
+.hc.l1 { background: var(--h1); } .hc.l2 { background: var(--h2); } .hc.l3 { background: var(--h3); } .hc.l4 { background: var(--h4); }
+.hc.pad { visibility: hidden; }
+.hc.sel { outline: 2px solid var(--ink); outline-offset: 1px; }
+.hc.cx { box-shadow: inset 0 0 0 1.5px var(--danger); }
+.heat-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.heat-scale { display: inline-flex; align-items: center; gap: 3px; }
+.heat-scale .hc { width: 11px; height: 11px; }
+.heat-detail { margin-top: 8px; font-size: 13px; min-height: 20px; }
+.heat-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.heat-kpis div { display: grid; }
+.heat-kpis small { font-size: 11px; color: var(--muted); }
+.heat-kpis span { font-size: 18px; font-weight: 700; }
+
 /* 탭바 */
 nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: center; padding-bottom: env(safe-area-inset-bottom, 0px); }
 nav.tabs .inner { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; max-width: 560px; }
@@ -390,6 +414,17 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       <div class="chart" id="monthlyChart"></div>
       <button type="button" class="linkbtn" id="monthlyTableBtn">표로 보기</button>
       <div class="tablev" id="monthlyTable" hidden></div>
+    </div>
+    <div class="card" data-metric="daily">
+      <h3>일별 활동</h3>
+      <p class="sub" id="heatSub"></p>
+      <div class="heat-kpis" id="heatKpis"></div>
+      <div class="heat-wrap" id="heatWrap"></div>
+      <div class="heat-foot">
+        <span>칸 하나가 하루, 세로 한 줄이 한 주예요. 빨간 테두리는 취소한 날.</span>
+        <span class="heat-scale">없음 <i class="hc"></i><i class="hc l2"></i><i class="hc l3"></i><i class="hc l4"></i> 3회+</span>
+      </div>
+      <div class="heat-detail" id="heatDetail"></div>
     </div>
     <div class="card chart-card" data-metric="progbar">
       <h3>프로그램별 레슨 수</h3>
@@ -1094,10 +1129,10 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   // ---------- 통계 ----------
   const METRICS = [
-    ['overview', '요약'], ['cycle', '결제 후 회차'], ['programs', '프로그램별 통계'], ['monthly', '월별 레슨 수'],
+    ['overview', '요약'], ['cycle', '결제 후 회차'], ['programs', '프로그램별 통계'], ['monthly', '월별 레슨 수'], ['daily', '일별 활동'],
     ['progbar', '프로그램별 막대'], ['dow', '요일별'], ['cancel', '취소 현황']
   ];
-  let picked = ['overview', 'cycle', 'programs', 'monthly'];
+  let picked = ['overview', 'cycle', 'programs', 'monthly', 'daily'];
   try { const v = JSON.parse(localStorage.getItem('lesson-metrics') || 'null'); if (Array.isArray(v)) picked = v.filter((k) => METRICS.some(([m]) => m === k)); } catch (e) {}
   function renderPicks() {
     $('metricPicks').replaceChildren(...METRICS.map(([k, t]) => el('button', { type: 'button', class: 'chip', 'aria-pressed': String(picked.includes(k)), text: t, onclick: () => {
@@ -1131,6 +1166,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     if (picked.includes('cycle')) statCycle(F);
     if (picked.includes('programs')) statPrograms(F);
     if (picked.includes('monthly')) monthlyChart(F.months, F.rows);
+    if (picked.includes('daily')) statDaily(F);
     if (picked.includes('progbar')) progChart(F.rows);
     if (picked.includes('dow')) dowChart(F.rows);
     if (picked.includes('cancel')) statCancel(F);
@@ -1180,6 +1216,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       const dn = mine.filter(done), cn = mine.filter((l) => l.state === CANCEL).length;
       const pays = dn.filter((l) => l.payment).length;
       const activeMonths = new Set(dn.map((l) => monthKey(l.date))).size;
+      const activeDays = new Set(dn.map((l) => l.date)).size;
       const perMonth = activeMonths ? (dn.length / activeMonths).toFixed(1) : '0';
       const dc = [0, 0, 0, 0, 0, 0, 0]; dn.forEach((l) => dc[dow(l.date)]++);
       const topDow = dn.length ? [1, 2, 3, 4, 5, 6, 0].filter((i) => dc[i] === Math.max(...dc)).map((i) => WEEK[i]).join('·') : '-';
@@ -1195,9 +1232,56 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
           el('div', null, el('small', { text: '결제' }), el('span', { text: pays })),
           el('div', null, el('small', { text: '취소' }), el('span', { text: cn }))),
         el('div', { class: 'spark', 'aria-label': '최근 12주 주간 레슨 수 ' + weeks.join(', ') }, ...weeks.map((w) => el('i', { class: w ? '' : 'zero', style: 'height:' + Math.max(12, (w / wmax) * 100) + '%' }))),
-        el('div', { class: 'foot', text: [p.student, dn.length && '주로 ' + topDow + '요일', slotText(p.id) && '주기 ' + slotText(p.id), last && '최근 ' + md(last), nMonths + '개월 중 ' + activeMonths + '개월 활동'].filter(Boolean).join(' · ') })));
+        el('div', { class: 'foot', text: [p.student, dn.length && '주로 ' + topDow + '요일', slotText(p.id) && '주기 ' + slotText(p.id), last && '최근 ' + md(last), '활동 ' + activeMonths + '/' + nMonths + '개월 · ' + activeDays + '일'].filter(Boolean).join(' · ') })));
     });
     if (quiet.length) box.append(el('button', { type: 'button', class: 'linkbtn', text: S.showQuiet ? '기록 없는 프로그램 숨기기' : '이 기간에 기록 없는 프로그램 ' + quiet.length + '개 보기', onclick: () => { S.showQuiet = !S.showQuiet; renderStats(); } }));
+  }
+  function statDaily({ months, from, rows, cancels }) {
+    const today = todayIso();
+    // 기간 시작 주의 일요일 ~ 이번 주 토요일
+    const start = addDays(from, -dow(from)), end = addDays(today, 6 - dow(today));
+    const byDay = {}, cxDay = {};
+    rows.forEach((l) => { (byDay[l.date] = byDay[l.date] || []).push(l); });
+    cancels.forEach((l) => { (cxDay[l.date] = cxDay[l.date] || []).push(l); });
+    const days = Object.keys(byDay);
+    const totalDays = daysBetween(from, today) + 1, weeksN = Math.max(1, Math.round(totalDays / 7));
+    // 가장 길게 이어진 '매주 1회 이상' 주 수
+    let streak = 0, best = 0;
+    for (let w = start; w <= today; w = addDays(w, 7)) {
+      let any = false; for (let i = 0; i < 7; i++) if (byDay[addDays(w, i)]) { any = true; break; }
+      streak = any ? streak + 1 : 0; best = Math.max(best, streak);
+    }
+    $('heatSub').textContent = months[0].replace('-', '.') + ' ~ ' + months[months.length - 1].replace('-', '.') + ' · 완료한 레슨 기준 · 칸을 누르면 그날 내역이 보여요';
+    $('heatKpis').replaceChildren(
+      el('div', null, el('small', { text: '레슨한 날' }), el('span', { text: days.length + '일' })),
+      el('div', null, el('small', { text: '주당 평균' }), el('span', { text: (days.length / weeksN).toFixed(1) + '일' })),
+      el('div', null, el('small', { text: '최장 연속' }), el('span', { text: best + '주' })));
+    const level = (n) => (n >= 3 ? 'l4' : n === 2 ? 'l3' : n === 1 ? 'l2' : '');
+    const monthsRow = el('div', { class: 'heat-months', 'aria-hidden': 'true' });
+    const grid = el('div', { class: 'heat-grid', role: 'grid', 'aria-label': '일별 레슨 수' });
+    let lastM = '';
+    const detail = $('heatDetail'); detail.replaceChildren();
+    const show = (d, cell) => {
+      grid.querySelectorAll('.hc.sel').forEach((x) => x.classList.remove('sel')); cell.classList.add('sel');
+      const items = (byDay[d] || []).map((l) => l.program + (l.payment ? ' (결제)' : '')).concat((cxDay[d] || []).map((l) => l.program + ' (취소)'));
+      detail.replaceChildren(el('b', { text: md(d) + ' ' + WEEK[dow(d)] + '요일 · ' + (byDay[d] || []).length + '회 ' }), items.length ? items.join(', ') : '레슨 없음');
+    };
+    for (let w = start; w <= end; w = addDays(w, 7)) {
+      const m = monthKey(addDays(w, 6));
+      monthsRow.append(el('span', { text: m !== lastM ? (+m.slice(5)) + '월' : '' })); lastM = m;
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(w, i), n = (byDay[d] || []).length;
+        if (d < from || d > today) { grid.append(el('i', { class: 'hc pad' })); continue; }
+        const cell = el('button', { type: 'button', class: 'hc ' + level(n) + (cxDay[d] ? ' cx' : ''), title: d + ' ' + n + '회', 'aria-label': d + ' 레슨 ' + n + '회' + (cxDay[d] ? ', 취소 ' + cxDay[d].length + '회' : '') });
+        cell.addEventListener('click', () => show(d, cell));
+        grid.append(cell);
+      }
+    }
+    const heat = el('div', { class: 'heat' },
+      el('div', { class: 'heat-days', 'aria-hidden': 'true' }, ...WEEK.map((w, i) => el('span', { text: i % 2 ? w : '' }))),
+      el('div', { class: 'heat-col' }, monthsRow, grid));
+    const wrap = $('heatWrap'); wrap.replaceChildren(heat);
+    wrap.scrollLeft = wrap.scrollWidth; // 최근 주가 먼저 보이게
   }
   function statCancel({ cancels }) {
     const box = $('cancelBox'); box.replaceChildren();
