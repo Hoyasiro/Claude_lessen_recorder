@@ -7,9 +7,6 @@ var CONFIG = {
   TZ: 'Asia/Seoul',
   TABS: { LESSONS: 'lessons', PROGRAMS: 'programs', ISSUES: 'migration_issues' }
 };
-function todayIso_() {
-  return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd');
-}
 function lastDataRow_(sheet) {
   var ids = sheet.getRange('A:A').getValues();
   for (var i = ids.length - 1; i >= 0; i--) if (ids[i][0] !== '') return i + 1;
@@ -77,9 +74,12 @@ var APP = {
   VAPID_SUBJECT: 'https://hoyasiro.github.io',
   CONFIG_TAB: 'app_config',
   SUBS_TAB: 'push_subs',
-  NOTIFY_HOUR: 9,
-  NOTIFY_OFFSETS: [[0, '오늘'], [1, '내일'], [7, '다음 주']]
+  MORNING: ['09:00', '12:00'], // 1주 전·하루 전 알림을 보내는 시간대 (트리거가 늦게 돌아도 이 안이면 보낸다)
+  AHEAD: [[1, '내일'], [7, '다음 주']],
+  BEFORE_HOURS: 3,               // 당일 알림: 레슨 시작 몇 시간 전
+  TICK_MINUTES: 15
 };
+var TRIGGER_VER = '2'; // 트리거 구성이 바뀌면 올린다 → 다음 요청 때 자동으로 다시 만든다
 var PLAN = '예정', CANCEL = '취소', DONE = '완료';
 function props_() { return PropertiesService.getScriptProperties(); }
 function db_() { return SpreadsheetApp.openById(CONFIG.DB_SPREADSHEET_ID); }
@@ -125,8 +125,7 @@ function setup() {
   }
   var subs = tab_(APP.SUBS_TAB);
   if (!subs.getRange('A1').getValue()) subs.getRange('A1:C1').setValues([['endpoint', 'subscription', 'created']]);
-  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'dailyPush') ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('dailyPush').timeBased().everyDays(1).atHour(APP.NOTIFY_HOUR).nearMinute(0).inTimezone(CONFIG.TZ).create();
+  p.deleteProperty('TRIGGER_VER'); ensureTriggers_();
   var api = ScriptApp.getService().getUrl();
   if (!api) { Logger.log('먼저 "배포 → 새 배포 → 웹 앱"으로 배포한 뒤 setup()을 다시 실행하세요.'); return; }
   if (/\/dev$/.test(api)) {
@@ -134,6 +133,15 @@ function setup() {
   }
   var link = APP.PAGES_URL + '#connect=' + IO_.b64url(JSON.stringify({ api: api, token: p.getProperty('API_TOKEN') }));
   Logger.log('연결 링크 (휴대폰에서 열기, 다른 사람과 공유하지 마세요):\n' + link);
+}
+function ensureTriggers_() {
+  var p = props_();
+  if (p.getProperty('TRIGGER_VER') === TRIGGER_VER) return;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (['dailyPush', 'pushTick'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('pushTick').timeBased().everyMinutes(APP.TICK_MINUTES).create();
+  p.setProperty('TRIGGER_VER', TRIGGER_VER);
 }
 function resetToken() { props_().deleteProperty('API_TOKEN'); setup(); }
 function doGet(e) {
@@ -145,13 +153,13 @@ function doGet(e) {
     return json_(obj);
   };
   if (q.token !== props_().getProperty('API_TOKEN')) return out({ error: 'unauthorized' });
-  if (q.action === 'digest') return out(digest_(todayIso_()));
+  if (q.action === 'digest') return out(lastPush_());
   if (q.payload) {
     var b; try { b = JSON.parse(q.payload); } catch (err) { return out({ error: 'bad_json' }); }
     b.token = q.token;
     return out(run_(b));
   }
-  return out({ ok: true, version: 3 });
+  return out({ ok: true, version: 4 });
 }
 function doPost(e) {
   var body = {};
@@ -163,6 +171,7 @@ function run_(body) {
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(20000);
+    try { ensureTriggers_(); } catch (err) { Logger.log('트리거 설정 실패: ' + err); } // 코드만 바꿔 배포해도 새 알림 트리거로 옮겨 간다
     return handle_(body);
   } catch (err) {
     return { error: String(err && err.message || err) };
@@ -182,7 +191,7 @@ function handle_(b) {
     case 'vapid': return { publicKey: props_().getProperty('VAPID_PUB') };
     case 'subscribe': return subscribe_(b.subscription);
     case 'unsubscribe': return unsubscribe_(b.endpoint);
-    case 'testPush': return { sent: sendAll_(true) };
+    case 'testPush': return { sent: sendAll_(preview_(nowKst_().slice(0, 10))) };
     default: throw new Error('알 수 없는 요청: ' + b.action);
   }
 }
@@ -247,31 +256,72 @@ function unsubscribe_(endpoint) {
   for (var i = rows.length - 1; i >= 1; i--) if (rows[i][0] === endpoint) sh.deleteRow(i + 1);
   return { ok: true };
 }
-function digest_(today) {
-  var data = load_(), slots = {};
-  Object.keys(data.settings.programs).forEach(function (pid) { slots[pid] = data.settings.programs[pid].slots || []; });
-  var week = ['일', '월', '화', '수', '목', '금', '토'];
-  var student = {}; data.programs.slice(1).forEach(function (r) { student[r[0]] = r[4]; });
-  var lines = [];
-  APP.NOTIFY_OFFSETS.forEach(function (o) {
-    var d = addDaysIso_(today, o[0]), dw = new Date(d + 'T00:00:00Z').getUTCDay();
-    data.lessons.slice(1).filter(function (r) { return r[1] === d && r[11] === PLAN; }).forEach(function (r) {
-      var s = (slots[r[3]] || []).filter(function (x) { return +x.dow === dw; })[0];
-      var when = o[1] + (o[0] === 7 ? ' ' + (+d.slice(5, 7)) + '/' + (+d.slice(8)) + '(' + week[dw] + ')' : '') + (s && s.time ? ' ' + s.time : '');
-      lines.push(when + ' · ' + r[4] + (student[r[3]] ? ' (' + student[r[3]] + ')' : '') + (r[7] === 'TRUE' ? ' · 결제' : ''));
-    });
-  });
-  return { title: '레슨 수첩', body: lines.join('\n'), count: lines.length, date: today };
+function nowKst_() { return Utilities.formatDate(new Date(), CONFIG.TZ, "yyyy-MM-dd'T'HH:mm"); }
+function minusHours_(hm, h) {
+  var m = Math.max(0, +hm.slice(0, 2) * 60 + +hm.slice(3, 5) - h * 60);
+  return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2);
 }
-function dailyPush() { sendAll_(false); }
-function sendAll_(force) {
-  if (!force && digest_(todayIso_()).count === 0) return 0;
+function pushContext_() {
+  var data = load_(), student = {};
+  data.programs.slice(1).forEach(function (r) { student[r[0]] = r[4]; });
+  return { data: data, student: student };
+}
+function plannedOn_(ctx, iso) {
+  var dw = new Date(iso + 'T00:00:00Z').getUTCDay(), progs = ctx.data.settings.programs;
+  return ctx.data.lessons.slice(1).filter(function (r) { return r[1] === iso && r[11] === PLAN; }).map(function (r) {
+    var s = ((progs[r[3]] || {}).slots || []).filter(function (x) { return +x.dow === dw; })[0];
+    return { id: r[0], time: (s && s.time) || '',
+      text: r[4] + (ctx.student[r[3]] ? ' (' + ctx.student[r[3]] + ')' : '') + (r[7] === 'TRUE' ? ' · 결제' : '') };
+  }).sort(function (a, b) { return (a.time || '99').localeCompare(b.time || '99'); });
+}
+function morningLines_(ctx, today) {
+  var week = ['일', '월', '화', '수', '목', '금', '토'], lines = [];
+  plannedOn_(ctx, today).forEach(function (x) { if (!x.time) lines.push('오늘 · ' + x.text); });
+  APP.AHEAD.forEach(function (o) {
+    var d = addDaysIso_(today, o[0]), dw = new Date(d + 'T00:00:00Z').getUTCDay();
+    var label = o[1] + (o[0] === 7 ? ' ' + (+d.slice(5, 7)) + '/' + (+d.slice(8)) + '(' + week[dw] + ')' : '');
+    plannedOn_(ctx, d).forEach(function (x) { lines.push(label + (x.time ? ' ' + x.time : '') + ' · ' + x.text); });
+  });
+  return lines;
+}
+function message_(lines, now) {
+  return { title: '레슨 수첩', body: lines.join('\n'), count: lines.length, date: now.slice(0, 10), tag: 'lesson-' + now };
+}
+function preview_(today) {
+  var ctx = pushContext_();
+  var lines = plannedOn_(ctx, today).filter(function (x) { return x.time; }).map(function (x) { return '오늘 ' + x.time + ' · ' + x.text; });
+  return message_(lines.concat(morningLines_(ctx, today)), nowKst_());
+}
+function tick_(now) {
+  var today = now.slice(0, 10), hm = now.slice(11, 16), p = props_();
+  var sent; try { sent = JSON.parse(p.getProperty('PUSH_SENT') || '{}'); } catch (err) { sent = {}; }
+  if (sent.date !== today) sent = { date: today, keys: [] };
+  var ctx = pushContext_(), lines = [];
+  plannedOn_(ctx, today).forEach(function (x) {
+    if (!x.time || sent.keys.indexOf(x.id) >= 0) return;
+    if (hm >= minusHours_(x.time, APP.BEFORE_HOURS) && hm < x.time) { lines.push('오늘 ' + x.time + ' · ' + x.text); sent.keys.push(x.id); }
+  });
+  if (hm >= APP.MORNING[0] && hm < APP.MORNING[1] && sent.keys.indexOf('am') < 0) {
+    lines = lines.concat(morningLines_(ctx, today)); sent.keys.push('am');
+  }
+  p.setProperty('PUSH_SENT', JSON.stringify(sent));
+  return lines.length ? sendAll_(message_(lines, now)) : 0;
+}
+function pushTick() { tick_(nowKst_()); }
+function dailyPush() { pushTick(); } // 예전 9시 트리거가 남아 있어도 동작하도록
+function lastPush_() {
+  var last; try { last = JSON.parse(props_().getProperty('PUSH_LAST') || 'null'); } catch (err) { last = null; }
+  if (last && Date.now() - last.at < 6 * 3600e3) return last.msg;
+  return preview_(nowKst_().slice(0, 10));
+}
+function sendAll_(msg) {
+  props_().setProperty('PUSH_LAST', JSON.stringify({ msg: msg, at: Date.now() }));
   var sh = tab_(APP.SUBS_TAB), rows = sh.getDataRange().getValues(), p = props_(), sent = 0, dead = [];
   for (var i = 1; i < rows.length; i++) {
     var endpoint = rows[i][0]; if (!endpoint) continue;
     var auth = vapidHeader(endpoint, p.getProperty('VAPID_PRIV'), p.getProperty('VAPID_PUB'), APP.VAPID_SUBJECT, Math.floor(Date.now() / 1000), IO_);
     var res = UrlFetchApp.fetch(endpoint, { method: 'post', payload: '', muteHttpExceptions: true,
-      headers: { Authorization: auth, TTL: '43200', Urgency: 'high' } });
+      headers: { Authorization: auth, TTL: '10800', Urgency: 'high' } });
     var code = res.getResponseCode();
     if (code === 404 || code === 410) dead.push(i + 1); else if (code < 300) sent++;
     else Logger.log('푸시 실패 ' + code + ': ' + res.getContentText().slice(0, 200));

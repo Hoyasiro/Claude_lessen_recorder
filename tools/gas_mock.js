@@ -89,7 +89,7 @@ function loadGas(db, base, pushLog, files) {
     ContentService: { MimeType: { JSON: 'json', JAVASCRIPT: 'js' }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
     ScriptApp: {
       getProjectTriggers: () => [], deleteTrigger() {},
-      newTrigger: () => { const t = { timeBased: () => t, everyDays: () => t, atHour: () => t, nearMinute: () => t, inTimezone: () => t, create: () => t }; return t; },
+      newTrigger: () => { const t = { timeBased: () => t, everyMinutes: () => t, everyDays: () => t, atHour: () => t, nearMinute: () => t, inTimezone: () => t, create: () => t }; return t; },
       getService: () => ({ getUrl: () => base + '/exec' })
     },
     Utilities: {
@@ -97,7 +97,7 @@ function loadGas(db, base, pushLog, files) {
       computeDigest: (alg, s) => [...crypto.createHash('sha256').update(String(s), 'utf8').digest()].map((b) => (b > 127 ? b - 256 : b)),
       base64EncodeWebSafe: (v) => (typeof v === 'string' ? Buffer.from(v, 'utf8') : Buffer.from(v.map((b) => b & 255))).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
       getUuid: () => crypto.randomUUID(),
-      formatDate: () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
+      formatDate: (d, tz, f) => { const k = new Date(d.getTime() + 9 * 3600e3).toISOString(); return /HH/.test(f) ? k.slice(0, 16) : k.slice(0, 10); } // 한국 시간
     },
     UrlFetchApp: { fetch: (url, opt) => { pushLog.push({ url, auth: opt.headers.Authorization }); return { getResponseCode: () => 201, getContentText: () => '' }; } }
   };

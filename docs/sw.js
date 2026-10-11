@@ -1,5 +1,5 @@
 /* 레슨 수첩 서비스워커: 오프라인 화면 캐시 + 아침 알림(푸시) 표시 */
-const SHELL = 'lesson-shell-v9';
+const SHELL = 'lesson-shell-v10';
 const CFG = 'lesson-cfg';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './badge-96.png'];
 
@@ -30,7 +30,7 @@ self.addEventListener('push', (e) => {
       if (c) {
         const d = await (await fetch(c.api + '?action=digest&token=' + encodeURIComponent(c.token))).json();
         if (d && !d.error) {
-          title = d.title || title; tag = 'lesson-' + (d.date || '');
+          title = d.title || title; tag = d.tag || 'lesson-' + (d.date || '');
           body = d.count ? d.body : '알림이 잘 연결됐어요. 오늘·내일·다음 주에 예정된 레슨은 없어요.';
         }
       }

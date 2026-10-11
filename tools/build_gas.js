@@ -23,7 +23,7 @@ const pick = (head) => {
   const end = code.indexOf('\n}', i);
   return code.slice(i, code.indexOf('\n', end + 1) + 1);
 };
-const shared = ['var CONFIG = {', 'function todayIso_(', 'function lastDataRow_('].map(pick).join('');
+const shared = ['var CONFIG = {', 'function lastDataRow_('].map(pick).join('');
 const strip = (src) => src.replace(/\/\*\*[\s\S]*?\*\/\n?/g, '').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n').replace(/\n\s*\n+/g, '\n');
 fs.writeFileSync(path.join(dir, 'dist', 'LessonApi.gs'),
   '// 레슨 수첩 API (자동 생성 tools/build_gas.js). 처음 한 번: 배포 → 새 배포 → 웹 앱(실행: 나, 액세스: 모든 사용자) → 함수 setup 실행.\n' +

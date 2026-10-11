@@ -400,7 +400,9 @@ if (typeof module !== 'undefined') module.exports = { P256: P256, vapidHeader: v
 
 // ===== Api.js =====
 /**
- * 레슨 수첩 웹앱(PWA)용 API + 매일 아침 푸시 알림.
+ * 레슨 수첩 웹앱(PWA)용 API + 푸시 알림.
+ * 알림: 1주 전·하루 전은 오전 9시, 당일은 레슨 시작 3시간 전 (레슨 시간이 없으면 당일 오전 9시).
+ * 15분마다 도는 트리거(pushTick)가 보낼 알림이 있는지 확인한다.
  *
  * 처음 한 번:
  *   1) 배포 → 새 배포 → 유형 "웹 앱", 실행: 나, 액세스: 모든 사용자 → 배포
@@ -410,7 +412,7 @@ if (typeof module !== 'undefined') module.exports = { P256: P256, vapidHeader: v
  *   - lessons / programs 탭: 레슨·프로그램 (기존 그대로)
  *   - app_config 탭 A1: 앱 설정 JSON (결제 주기, 레슨 주기, 색, 짧은 이름)
  *   - push_subs 탭: 알림을 받을 기기 목록
- * 스크립트 속성: API_TOKEN, VAPID_PRIV, VAPID_PUB
+ * 스크립트 속성: API_TOKEN, VAPID_PRIV, VAPID_PUB, PUSH_SENT(오늘 보낸 알림), PUSH_LAST(마지막 알림 내용), TRIGGER_VER
  */
 
 var APP = {
@@ -418,9 +420,12 @@ var APP = {
   VAPID_SUBJECT: 'https://hoyasiro.github.io',
   CONFIG_TAB: 'app_config',
   SUBS_TAB: 'push_subs',
-  NOTIFY_HOUR: 9,
-  NOTIFY_OFFSETS: [[0, '오늘'], [1, '내일'], [7, '다음 주']]
+  MORNING: ['09:00', '12:00'], // 1주 전·하루 전 알림을 보내는 시간대 (트리거가 늦게 돌아도 이 안이면 보낸다)
+  AHEAD: [[1, '내일'], [7, '다음 주']],
+  BEFORE_HOURS: 3,               // 당일 알림: 레슨 시작 몇 시간 전
+  TICK_MINUTES: 15
 };
+var TRIGGER_VER = '2'; // 트리거 구성이 바뀌면 올린다 → 다음 요청 때 자동으로 다시 만든다
 var PLAN = '예정', CANCEL = '취소', DONE = '완료';
 
 // ---------- 공통 ----------
@@ -471,9 +476,7 @@ function setup() {
   var subs = tab_(APP.SUBS_TAB);
   if (!subs.getRange('A1').getValue()) subs.getRange('A1:C1').setValues([['endpoint', 'subscription', 'created']]);
 
-  // 매일 오전 9시 근처(±15분) 알림 트리거
-  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'dailyPush') ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('dailyPush').timeBased().everyDays(1).atHour(APP.NOTIFY_HOUR).nearMinute(0).inTimezone(CONFIG.TZ).create();
+  p.deleteProperty('TRIGGER_VER'); ensureTriggers_();
 
   var api = ScriptApp.getService().getUrl();
   if (!api) { Logger.log('먼저 "배포 → 새 배포 → 웹 앱"으로 배포한 뒤 setup()을 다시 실행하세요.'); return; }
@@ -482,6 +485,17 @@ function setup() {
   }
   var link = APP.PAGES_URL + '#connect=' + IO_.b64url(JSON.stringify({ api: api, token: p.getProperty('API_TOKEN') }));
   Logger.log('연결 링크 (휴대폰에서 열기, 다른 사람과 공유하지 마세요):\n' + link);
+}
+
+/** 알림 트리거(15분마다 pushTick). 예전 9시 트리거(dailyPush)는 지운다 */
+function ensureTriggers_() {
+  var p = props_();
+  if (p.getProperty('TRIGGER_VER') === TRIGGER_VER) return;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (['dailyPush', 'pushTick'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('pushTick').timeBased().everyMinutes(APP.TICK_MINUTES).create();
+  p.setProperty('TRIGGER_VER', TRIGGER_VER);
 }
 
 /** 연결 링크를 바꾸고 싶을 때(유출 의심 등): 토큰을 새로 만들고 링크를 다시 출력 */
@@ -498,14 +512,14 @@ function doGet(e) {
     return json_(obj);
   };
   if (q.token !== props_().getProperty('API_TOKEN')) return out({ error: 'unauthorized' });
-  if (q.action === 'digest') return out(digest_(todayIso_()));
+  if (q.action === 'digest') return out(lastPush_());
   // POST가 막히는 브라우저용: ?payload=<JSON> 으로 같은 요청을 받는다
   if (q.payload) {
     var b; try { b = JSON.parse(q.payload); } catch (err) { return out({ error: 'bad_json' }); }
     b.token = q.token;
     return out(run_(b));
   }
-  return out({ ok: true, version: 3 });
+  return out({ ok: true, version: 4 });
 }
 
 function doPost(e) {
@@ -519,6 +533,7 @@ function run_(body) {
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(20000);
+    try { ensureTriggers_(); } catch (err) { Logger.log('트리거 설정 실패: ' + err); } // 코드만 바꿔 배포해도 새 알림 트리거로 옮겨 간다
     return handle_(body);
   } catch (err) {
     return { error: String(err && err.message || err) };
@@ -539,7 +554,7 @@ function handle_(b) {
     case 'vapid': return { publicKey: props_().getProperty('VAPID_PUB') };
     case 'subscribe': return subscribe_(b.subscription);
     case 'unsubscribe': return unsubscribe_(b.endpoint);
-    case 'testPush': return { sent: sendAll_(true) };
+    case 'testPush': return { sent: sendAll_(preview_(nowKst_().slice(0, 10))) };
     default: throw new Error('알 수 없는 요청: ' + b.action);
   }
 }
@@ -612,35 +627,87 @@ function unsubscribe_(endpoint) {
   return { ok: true };
 }
 
-/** 오늘·내일·7일 뒤의 예정 레슨으로 알림 문구를 만든다 */
-function digest_(today) {
-  var data = load_(), slots = {};
-  Object.keys(data.settings.programs).forEach(function (pid) { slots[pid] = data.settings.programs[pid].slots || []; });
-  var week = ['일', '월', '화', '수', '목', '금', '토'];
-  var student = {}; data.programs.slice(1).forEach(function (r) { student[r[0]] = r[4]; });
-  var lines = [];
-  APP.NOTIFY_OFFSETS.forEach(function (o) {
-    var d = addDaysIso_(today, o[0]), dw = new Date(d + 'T00:00:00Z').getUTCDay();
-    data.lessons.slice(1).filter(function (r) { return r[1] === d && r[11] === PLAN; }).forEach(function (r) {
-      var s = (slots[r[3]] || []).filter(function (x) { return +x.dow === dw; })[0];
-      var when = o[1] + (o[0] === 7 ? ' ' + (+d.slice(5, 7)) + '/' + (+d.slice(8)) + '(' + week[dw] + ')' : '') + (s && s.time ? ' ' + s.time : '');
-      lines.push(when + ' · ' + r[4] + (student[r[3]] ? ' (' + student[r[3]] + ')' : '') + (r[7] === 'TRUE' ? ' · 결제' : ''));
-    });
-  });
-  return { title: '레슨 수첩', body: lines.join('\n'), count: lines.length, date: today };
+function nowKst_() { return Utilities.formatDate(new Date(), CONFIG.TZ, "yyyy-MM-dd'T'HH:mm"); }
+function minusHours_(hm, h) {
+  var m = Math.max(0, +hm.slice(0, 2) * 60 + +hm.slice(3, 5) - h * 60);
+  return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2);
 }
 
-/** 매일 9시 트리거. 알릴 레슨이 없으면 보내지 않는다 */
-function dailyPush() { sendAll_(false); }
+/** 알림 계산에 필요한 시트 데이터를 한 번에 읽는다 */
+function pushContext_() {
+  var data = load_(), student = {};
+  data.programs.slice(1).forEach(function (r) { student[r[0]] = r[4]; });
+  return { data: data, student: student };
+}
+/** 그날의 예정 레슨: { id, time(레슨 주기의 시간, 없으면 ''), text } */
+function plannedOn_(ctx, iso) {
+  var dw = new Date(iso + 'T00:00:00Z').getUTCDay(), progs = ctx.data.settings.programs;
+  return ctx.data.lessons.slice(1).filter(function (r) { return r[1] === iso && r[11] === PLAN; }).map(function (r) {
+    var s = ((progs[r[3]] || {}).slots || []).filter(function (x) { return +x.dow === dw; })[0];
+    return { id: r[0], time: (s && s.time) || '',
+      text: r[4] + (ctx.student[r[3]] ? ' (' + ctx.student[r[3]] + ')' : '') + (r[7] === 'TRUE' ? ' · 결제' : '') };
+  }).sort(function (a, b) { return (a.time || '99').localeCompare(b.time || '99'); });
+}
+/** 오전 9시 알림 줄: 내일·다음 주(7일 뒤) 레슨 + 시간이 정해지지 않은 오늘 레슨 */
+function morningLines_(ctx, today) {
+  var week = ['일', '월', '화', '수', '목', '금', '토'], lines = [];
+  plannedOn_(ctx, today).forEach(function (x) { if (!x.time) lines.push('오늘 · ' + x.text); });
+  APP.AHEAD.forEach(function (o) {
+    var d = addDaysIso_(today, o[0]), dw = new Date(d + 'T00:00:00Z').getUTCDay();
+    var label = o[1] + (o[0] === 7 ? ' ' + (+d.slice(5, 7)) + '/' + (+d.slice(8)) + '(' + week[dw] + ')' : '');
+    plannedOn_(ctx, d).forEach(function (x) { lines.push(label + (x.time ? ' ' + x.time : '') + ' · ' + x.text); });
+  });
+  return lines;
+}
+function message_(lines, now) {
+  return { title: '레슨 수첩', body: lines.join('\n'), count: lines.length, date: now.slice(0, 10), tag: 'lesson-' + now };
+}
+/** 테스트 알림 내용: 오늘(시간 있는 레슨 포함) + 내일·다음 주 */
+function preview_(today) {
+  var ctx = pushContext_();
+  var lines = plannedOn_(ctx, today).filter(function (x) { return x.time; }).map(function (x) { return '오늘 ' + x.time + ' · ' + x.text; });
+  return message_(lines.concat(morningLines_(ctx, today)), nowKst_());
+}
 
-function sendAll_(force) {
-  if (!force && digest_(todayIso_()).count === 0) return 0;
+/**
+ * 15분마다 실행. now = 'yyyy-MM-ddTHH:mm'(한국 시간)
+ * - 당일 레슨: 시작 3시간 전 ~ 시작 전 사이에 한 번
+ * - 오전 9시(~12시) 사이 첫 실행 때 한 번: 내일·다음 주 레슨, 시간 없는 오늘 레슨
+ * 보낸 것은 PUSH_SENT에 적어 두고 날짜가 바뀌면 비운다. 한 번에 보낼 것이 여럿이면 알림 하나로 묶는다.
+ */
+function tick_(now) {
+  var today = now.slice(0, 10), hm = now.slice(11, 16), p = props_();
+  var sent; try { sent = JSON.parse(p.getProperty('PUSH_SENT') || '{}'); } catch (err) { sent = {}; }
+  if (sent.date !== today) sent = { date: today, keys: [] };
+  var ctx = pushContext_(), lines = [];
+  plannedOn_(ctx, today).forEach(function (x) {
+    if (!x.time || sent.keys.indexOf(x.id) >= 0) return;
+    if (hm >= minusHours_(x.time, APP.BEFORE_HOURS) && hm < x.time) { lines.push('오늘 ' + x.time + ' · ' + x.text); sent.keys.push(x.id); }
+  });
+  if (hm >= APP.MORNING[0] && hm < APP.MORNING[1] && sent.keys.indexOf('am') < 0) {
+    lines = lines.concat(morningLines_(ctx, today)); sent.keys.push('am');
+  }
+  p.setProperty('PUSH_SENT', JSON.stringify(sent));
+  return lines.length ? sendAll_(message_(lines, now)) : 0;
+}
+function pushTick() { tick_(nowKst_()); }
+function dailyPush() { pushTick(); } // 예전 9시 트리거가 남아 있어도 동작하도록
+
+/** 서비스워커가 푸시를 받으면 이 내용을 가져가 알림으로 띄운다 (푸시에는 내용을 싣지 않는다) */
+function lastPush_() {
+  var last; try { last = JSON.parse(props_().getProperty('PUSH_LAST') || 'null'); } catch (err) { last = null; }
+  if (last && Date.now() - last.at < 6 * 3600e3) return last.msg;
+  return preview_(nowKst_().slice(0, 10));
+}
+
+function sendAll_(msg) {
+  props_().setProperty('PUSH_LAST', JSON.stringify({ msg: msg, at: Date.now() }));
   var sh = tab_(APP.SUBS_TAB), rows = sh.getDataRange().getValues(), p = props_(), sent = 0, dead = [];
   for (var i = 1; i < rows.length; i++) {
     var endpoint = rows[i][0]; if (!endpoint) continue;
     var auth = vapidHeader(endpoint, p.getProperty('VAPID_PRIV'), p.getProperty('VAPID_PUB'), APP.VAPID_SUBJECT, Math.floor(Date.now() / 1000), IO_);
     var res = UrlFetchApp.fetch(endpoint, { method: 'post', payload: '', muteHttpExceptions: true,
-      headers: { Authorization: auth, TTL: '43200', Urgency: 'high' } });
+      headers: { Authorization: auth, TTL: '10800', Urgency: 'high' } });
     var code = res.getResponseCode();
     if (code === 404 || code === 410) dead.push(i + 1); else if (code < 300) sent++;
     else Logger.log('푸시 실패 ' + code + ': ' + res.getContentText().slice(0, 200));

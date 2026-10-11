@@ -466,7 +466,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   <section class="panel" id="panel-settings" hidden>
     <div class="card" style="display:grid;gap:10px" id="pushCard">
       <div><div class="lab" style="font-weight:600">휴대폰 알림</div>
-        <div class="hint">예정 레슨을 1주 전·하루 전·당일 오전 9시에 레슨 수첩 알림으로 알려 드려요.</div></div>
+        <div class="hint">예정 레슨을 1주 전·하루 전에는 오전 9시에, 당일에는 레슨 시작 3시간 전에 알려 드려요. 레슨 주기에 시간이 없는 레슨은 당일 오전 9시에 알려요.</div></div>
       <div class="hint" id="pushStatus"></div>
       <div class="btn-row" id="pushBtns"></div>
     </div>
@@ -863,7 +863,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     if (!(S.store && S.store.api)) { st.textContent = '휴대폰 알림은 홈 화면에 설치한 레슨 수첩 앱에서 켤 수 있어요.'; return; }
     if (!pushSupported()) { st.textContent = '이 브라우저는 알림을 지원하지 않아요. 삼성 인터넷이나 크롬의 일반 창에서 열어 홈 화면에 설치해 주세요.'; return; }
     if (Notification.permission === 'denied') { st.textContent = '알림이 차단돼 있어요. 휴대폰 설정 → 애플리케이션 → 삼성 인터넷(또는 크롬) → 알림을 허용하고, 브라우저 설정의 사이트 알림에서도 이 사이트를 허용해 주세요.'; return; }
-    st.textContent = pushMsg || (pushSub ? '켜져 있어요. 이 기기로 매일 오전 9시쯤 알려 드려요. 알릴 레슨이 없는 날은 조용해요.' : '꺼져 있어요.');
+    st.textContent = pushMsg || (pushSub ? '켜져 있어요. 알릴 레슨이 있을 때만 이 기기로 알려 드려요. 시간은 15분 안쪽으로 늦을 수 있어요.' : '꺼져 있어요.');
     if (pushSub) btns.append(
       el('button', { type: 'button', class: 'secondary', text: '테스트 알림', onclick: () => pushAction('test') }),
       el('button', { type: 'button', class: 'secondary', text: '알림 끄기', onclick: () => pushAction('off') }));
