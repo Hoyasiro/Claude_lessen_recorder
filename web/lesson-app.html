@@ -332,11 +332,6 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       <span class="lab">프로그램</span>
       <div class="prog-list" id="progList"></div>
     </div>
-    <div class="field">
-      <label for="inTime">시간</label>
-      <input type="time" id="inTime">
-      <div class="hint" id="timeHint"></div>
-    </div>
     <div class="field" id="repeatField" hidden>
       <span class="lab">반복</span>
       <div class="seg" id="repeatSeg">
@@ -696,7 +691,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   // ---------- 상태 ----------
   const S = {
-    store: null, mcp: null, timeKey: null, programs: [], lessons: [], settings: { programs: {} }, loadedAt: null, loadError: false, busy: false,
+    store: null, mcp: null, programs: [], lessons: [], settings: { programs: {} }, loadedAt: null, loadError: false, busy: false,
     tab: 'cal', settingsOpen: false, pick: null, dupOk: false, repeat: 1,
     listLimit: 60, calMonth: monthKey(todayIso()), calSel: todayIso(), showEndedSet: false, showQuiet: false
   };
@@ -928,11 +923,6 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     if (!future) S.repeat = 1;
     document.querySelectorAll('#repeatSeg button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.n === S.repeat)));
     $('payLabel').textContent = future ? '이 날 결제할 예정이에요' : '이번 레슨에 결제했어요';
-    // 프로그램이나 날짜를 바꾸면 그 요일의 레슨 주기 시간으로 채운다
-    const timeKey = S.pick + '|' + date;
-    if (S.timeKey !== timeKey) { S.timeKey = timeKey; $('inTime').value = S.pick && isIso(date) ? slotTime(S.pick, date) : ''; }
-    $('inTime').disabled = timeLocked();
-    $('timeHint').textContent = S.pick && isIso(date) ? timeHelp(S.pick, date) : '프로그램을 고르면 레슨 주기 시간이 채워져요.';
     const dup = S.pick && S.lessons.find((l) => l.programId === S.pick && l.date === date && l.state !== CANCEL);
     const w = $('dupWarn');
     if (dup && !S.dupOk) {
@@ -950,12 +940,12 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const list = ids.map((id, i) => {
       const d = addDays(date, i * 7);
       return { id, date: d, programId: p.id, program: p.name, coach: p.coach, payment: i === 0 && $('inPay').checked, note: $('inNote').value.trim(),
-        source: '앱 입력 ' + today, state: d > today ? PLAN : DONE, time: timeLocked() ? '' : timeOverride(p.id, d, $('inTime').value) };
+        source: '앱 입력 ' + today, state: d > today ? PLAN : DONE };
     });
     await run(async () => {
       const rows = await S.store.add(list);
       list.forEach((l, i) => { l.row = rows[i]; S.lessons.push(l); });
-      $('inPay').checked = false; $('inNote').value = ''; S.dupOk = false; S.repeat = 1; S.timeKey = null;
+      $('inPay').checked = false; $('inNote').value = ''; S.dupOk = false; S.repeat = 1;
       toast(p.name + ' ' + md(date) + (n > 1 ? ' 외 ' + (n - 1) + '회' : '') + (list[0].state === PLAN ? ' 일정 등록' : ' 저장'), n === 1 ? { label: '되돌리기', run: () => removeLesson(list[0], '저장을 취소했어요') } : null);
     });
   }
