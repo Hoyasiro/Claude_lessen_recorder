@@ -24,7 +24,8 @@ var LESSON_COLUMNS = [
   { key: 'note', label: '메모' },
   { key: 'status', label: '상태', formula: '={"상태";ARRAYFORMULA(IF(LEN(D2:D),IFERROR(VLOOKUP(D2:D,programs!A:H,8,FALSE)&"",""),))}' },
   { key: 'source_cell', label: '원본셀' },
-  { key: 'state', label: '진행' } // 완료/예정/취소 (이관한 기록은 모두 완료)
+  { key: 'state', label: '진행' }, // 완료/예정/취소 (이관한 기록은 모두 완료)
+  { key: 'time', label: '시간' }   // 그 레슨만 레슨 주기와 시간이 다를 때 'HH:mm' (앱에서 입력)
 ];
 
 /** programs 의 집계 컬럼은 행마다 수식({r} = 행 번호) */
@@ -425,6 +426,7 @@ var APP = {
   BEFORE_HOURS: 3,               // 당일 알림: 레슨 시작 몇 시간 전
   TICK_MINUTES: 15
 };
+var API_VERSION = 5; // 5: lessons M열(레슨별 시간)
 var TRIGGER_VER = '2'; // 트리거 구성이 바뀌면 올린다 → 다음 요청 때 자동으로 다시 만든다
 var PLAN = '예정', CANCEL = '취소', DONE = '완료';
 
@@ -519,7 +521,7 @@ function doGet(e) {
     b.token = q.token;
     return out(run_(b));
   }
-  return out({ ok: true, version: 4 });
+  return out({ ok: true, version: API_VERSION });
 }
 
 function doPost(e) {
@@ -562,22 +564,24 @@ function handle_(b) {
 // ---------- 데이터 ----------
 function load_() {
   var ss = db_();
-  var lessons = ss.getSheetByName(CONFIG.TABS.LESSONS).getRange('A:L').getDisplayValues();
+  var lessons = ss.getSheetByName(CONFIG.TABS.LESSONS).getRange('A:M').getDisplayValues();
   var programs = ss.getSheetByName(CONFIG.TABS.PROGRAMS).getRange('A:L').getDisplayValues();
   var cut = function (rows) { var last = 0; rows.forEach(function (r, i) { if (r[0]) last = i + 1; }); return rows.slice(0, last); };
   var raw = tab_(APP.CONFIG_TAB).getRange('A1').getValue();
   var settings; try { settings = JSON.parse(raw || '{}'); } catch (err) { settings = {}; }
   if (!settings.programs) settings.programs = {};
-  return { lessons: cut(lessons), programs: cut(programs), settings: settings };
+  return { lessons: cut(lessons), programs: cut(programs), settings: settings, version: API_VERSION };
 }
 
 // lessons 열: A ID B 날짜 C 요일(수식) D 프로그램ID E 프로그램 F 대상(수식) G 코치 H 결제 I 메모 J 상태(수식) K 원본셀 L 진행
+//             M 시간(그 레슨만 레슨 주기와 다를 때만, 텍스트 'HH:mm')
 // 수식 열(C·F·J)은 건드리지 않도록 나눠서 쓴다
 function writeLessonRow_(sh, row, l) {
   sh.getRange(row, 1, 1, 2).setValues([[l.id, l.date]]);
   sh.getRange(row, 4, 1, 2).setValues([[l.programId, l.program]]);
   sh.getRange(row, 7, 1, 3).setValues([[l.coach || '', !!l.payment, l.note || '']]);
-  sh.getRange(row, 11, 1, 2).setValues([[l.source || '', l.state || DONE]]);
+  sh.getRange(row, 13).setNumberFormat('@'); // '18:00'이 시각 값으로 바뀌지 않게
+  sh.getRange(row, 11, 1, 3).setValues([[l.source || '', l.state || DONE, l.time || '']]);
   sh.getRange(row, 2).setNumberFormat('yyyy-mm-dd');
 }
 function addLessons_(list) {
@@ -628,6 +632,10 @@ function unsubscribe_(endpoint) {
 }
 
 function nowKst_() { return Utilities.formatDate(new Date(), CONFIG.TZ, "yyyy-MM-dd'T'HH:mm"); }
+function normTime_(v) {
+  var m = /^(\d{1,2}):(\d{2})/.exec(String(v || '').trim());
+  return m ? ('0' + m[1]).slice(-2) + ':' + m[2] : '';
+}
 function minusHours_(hm, h) {
   var m = Math.max(0, +hm.slice(0, 2) * 60 + +hm.slice(3, 5) - h * 60);
   return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2);
@@ -644,7 +652,7 @@ function plannedOn_(ctx, iso) {
   var dw = new Date(iso + 'T00:00:00Z').getUTCDay(), progs = ctx.data.settings.programs;
   return ctx.data.lessons.slice(1).filter(function (r) { return r[1] === iso && r[11] === PLAN; }).map(function (r) {
     var s = ((progs[r[3]] || {}).slots || []).filter(function (x) { return +x.dow === dw; })[0];
-    return { id: r[0], time: (s && s.time) || '',
+    return { id: r[0], time: normTime_(r[12]) || (s && s.time) || '',
       text: r[4] + (ctx.student[r[3]] ? ' (' + ctx.student[r[3]] + ')' : '') + (r[7] === 'TRUE' ? ' · 결제' : '') };
   }).sort(function (a, b) { return (a.time || '99').localeCompare(b.time || '99'); });
 }

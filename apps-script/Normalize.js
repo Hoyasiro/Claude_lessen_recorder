@@ -21,7 +21,8 @@ var LESSON_COLUMNS = [
   { key: 'note', label: '메모' },
   { key: 'status', label: '상태', formula: '={"상태";ARRAYFORMULA(IF(LEN(D2:D),IFERROR(VLOOKUP(D2:D,programs!A:H,8,FALSE)&"",""),))}' },
   { key: 'source_cell', label: '원본셀' },
-  { key: 'state', label: '진행' } // 완료/예정/취소 (이관한 기록은 모두 완료)
+  { key: 'state', label: '진행' }, // 완료/예정/취소 (이관한 기록은 모두 완료)
+  { key: 'time', label: '시간' }   // 그 레슨만 레슨 주기와 시간이 다를 때 'HH:mm' (앱에서 입력)
 ];
 
 /** programs 의 집계 컬럼은 행마다 수식({r} = 행 번호) */

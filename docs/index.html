@@ -348,6 +348,11 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       <span class="lab">프로그램</span>
       <div class="prog-list" id="progList"></div>
     </div>
+    <div class="field">
+      <label for="inTime">시간</label>
+      <input type="time" id="inTime">
+      <div class="hint" id="timeHint"></div>
+    </div>
     <div class="field" id="repeatField" hidden>
       <span class="lab">반복</span>
       <div class="seg" id="repeatSeg">
@@ -519,19 +524,20 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const md = (iso) => (+iso.slice(5, 7)) + '/' + (+iso.slice(8, 10));
 
   // ---------- 시트 매핑 ----------
-  // lessons: A레슨ID B날짜 C요일(수식) D프로그램ID E프로그램 F대상(수식) G코치 H결제 I메모 J상태(수식) K원본셀 L진행(완료/예정/취소)
-  // 레슨 시간은 저장하지 않고 앱 설정의 레슨 주기(요일·시간)에서 계산해 보여준다
+  // lessons: A레슨ID B날짜 C요일(수식) D프로그램ID E프로그램 F대상(수식) G코치 H결제 I메모 J상태(수식) K원본셀 L진행(완료/예정/취소) M시간
+  // 레슨 시간은 기본적으로 앱 설정의 레슨 주기(요일·시간)에서 계산한다. M열은 그 레슨만 다른 시간일 때만 채운다
+  const normTime = (v) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(v || '').trim()); return m ? pad(+m[1]) + ':' + m[2] : ''; };
   function parseLessons(values) {
     const out = [];
     (values || []).forEach((r, i) => {
       if (i === 0 || !r || !/^L\d+$/.test(r[0] || '')) return;
       const st = r[11] === PLAN || r[11] === CANCEL ? r[11] : DONE;
       out.push({ row: i + 1, id: r[0], date: r[1] || '', programId: r[3] || '', program: r[4] || '', coach: r[6] || '',
-        payment: String(r[7]).toUpperCase() === 'TRUE', note: r[8] || '', source: r[10] || '', state: st });
+        payment: String(r[7]).toUpperCase() === 'TRUE', note: r[8] || '', source: r[10] || '', state: st, time: normTime(r[12]) });
     });
     return out;
   }
-  const lessonValues = (l) => [l.id, l.date, null, l.programId, l.program, null, l.coach, !!l.payment, l.note || '', null, l.source || '', l.state || DONE];
+  const lessonValues = (l) => [l.id, l.date, null, l.programId, l.program, null, l.coach, !!l.payment, l.note || '', null, l.source || '', l.state || DONE, l.time || ''];
   // programs: A ID B 프로그램 C 종목 D 세부 E 대상 F 코치 G 메모 H 상태 I~L 집계 수식
   function parsePrograms(values) {
     return (values || []).map((r, i) => ({ r, i })).filter(({ r, i }) => i > 0 && r && r[0]).map(({ r, i }) => ({
@@ -556,7 +562,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     let programs = seed.programs.map((p) => ({ ...p }));
     let settings = JSON.parse(JSON.stringify(seed.settings || { programs: {} }));
     return {
-      demo: true,
+      demo: true, timeOk: true,
       async load() { return { programs: programs.map((p) => ({ ...p })), lessons: lessons.map((l) => ({ ...l })) }; },
       async add(list) {
         let row = Math.max(1, ...lessons.map((x) => x.row));
@@ -580,18 +586,19 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       if (!ids[x.row - 1] || ids[x.row - 1][0] !== x.id) throw { code: 'moved', message: '시트가 바뀌었어요. 새로고침 후 다시 시도해 주세요.' };
     }
     return {
+      timeOk: true,
       async load() {
-        const [pv, lv] = await Promise.all([getCol('programs!A:L'), getCol('lessons!A:L')]);
+        const [pv, lv] = await Promise.all([getCol('programs!A:L'), getCol('lessons!A:M')]);
         return { programs: parsePrograms(pv), lessons: parseLessons(lv) };
       },
       async add(list) {
         const start = lastRow(await getCol('lessons!A:A')) + 1, end = start + list.length - 1;
-        await call('update_values', { spreadsheetId: SHEET_ID, range: 'lessons!A' + start + ':L' + end, values: list.map(lessonValues) });
+        await call('update_values', { spreadsheetId: SHEET_ID, range: 'lessons!A' + start + ':M' + end, values: list.map(lessonValues) });
         return list.map((_, i) => start + i);
       },
       async update(l) {
         await check('lessons', l);
-        await call('update_values', { spreadsheetId: SHEET_ID, range: 'lessons!A' + l.row + ':L' + l.row, values: [lessonValues(l)] });
+        await call('update_values', { spreadsheetId: SHEET_ID, range: 'lessons!A' + l.row + ':M' + l.row, values: [lessonValues(l)] });
       },
       async remove(l) {
         await check('lessons', l);
@@ -657,9 +664,13 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       return viaJsonp(body);
     }
     let last = null;
-    return {
-      api: true, post,
-      async load() { last = post('load'); const j = await last; return { programs: parsePrograms(j.programs), lessons: parseLessons(j.lessons) }; },
+    const store = {
+      api: true, post, timeOk: false,
+      async load() {
+        last = post('load'); const j = await last;
+        store.timeOk = (j.version || 0) >= 5; // 서버 5부터 레슨별 시간(M열)을 읽고 쓴다
+        return { programs: parsePrograms(j.programs), lessons: parseLessons(j.lessons) };
+      },
       async loadSettings() { const j = await (last || post('load')); return j.settings && j.settings.programs ? j.settings : { programs: {} }; },
       async add(list) { return (await post('addLessons', { list })).rows; },
       async update(l) { await post('updateLesson', { lesson: l }); },
@@ -668,6 +679,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       async updateProgram(p) { await post('updateProgram', { program: p }); },
       async saveSettings(s) { await post('saveSettings', { settings: s }); }
     };
+    return store;
   }
   function apiConfig() {
     // 연결 링크(#connect=...)로 들어오면 저장하고 주소창에서 지운다
@@ -700,7 +712,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   // ---------- 상태 ----------
   const S = {
-    store: null, mcp: null, programs: [], lessons: [], settings: { programs: {} }, loadedAt: null, loadError: false, busy: false,
+    store: null, mcp: null, timeKey: null, programs: [], lessons: [], settings: { programs: {} }, loadedAt: null, loadError: false, busy: false,
     tab: 'cal', settingsOpen: false, pick: null, dupOk: false, repeat: 1,
     listLimit: 60, calMonth: monthKey(todayIso()), calSel: todayIso(), showEndedSet: false, showQuiet: false
   };
@@ -732,7 +744,13 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const slotsOf = (pid) => (conf(pid).slots || []).filter((x) => x && x.dow != null);
   const slotTime = (pid, iso) => { const s = slotsOf(pid).find((x) => +x.dow === dow(iso)); return s ? s.time || '' : ''; };
   const slotText = (pid) => slotsOf(pid).slice().sort((a, b) => ((+a.dow + 6) % 7) - ((+b.dow + 6) % 7)).map((x) => WEEK[x.dow] + (x.time ? ' ' + x.time : '')).join(', ');
-  const timeOf = (l) => slotTime(l.programId, l.date);
+  const timeOf = (l) => l.time || slotTime(l.programId, l.date);
+  // 입력한 시간이 그날 레슨 주기 시간과 같으면 비워 둔다(주기를 바꾸면 따라가도록)
+  const timeOverride = (pid, iso, t) => (t && t !== slotTime(pid, iso) ? t : '');
+  const timeLocked = () => !(S.store && S.store.timeOk);
+  const timeHelp = (pid, iso) => (timeLocked() ? '레슨별 시간을 바꾸려면 서버 코드를 업데이트해 주세요.'
+    : slotTime(pid, iso) ? '레슨 주기 시간은 ' + slotTime(pid, iso) + '이에요. 이 레슨만 다르면 바꾸세요. 비우면 주기 시간을 따라요.'
+    : '레슨 주기에 이 요일 시간이 없어요. 시간을 넣으면 이 레슨에만 적용돼요.');
   const byTime = (a, b) => a.date.localeCompare(b.date) || (timeOf(a) || '99').localeCompare(timeOf(b) || '99') || a.programId.localeCompare(b.programId);
 
   // 색: 앱 설정에 저장된 슬롯이 우선. 없으면 최근 12개월 레슨 수 순으로 남은 슬롯을 배정(필터와 무관하게 고정)
@@ -926,6 +944,11 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     if (!future) S.repeat = 1;
     document.querySelectorAll('#repeatSeg button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.n === S.repeat)));
     $('payLabel').textContent = future ? '이 날 결제할 예정이에요' : '이번 레슨에 결제했어요';
+    // 프로그램이나 날짜를 바꾸면 그 요일의 레슨 주기 시간으로 채운다
+    const timeKey = S.pick + '|' + date;
+    if (S.timeKey !== timeKey) { S.timeKey = timeKey; $('inTime').value = S.pick && isIso(date) ? slotTime(S.pick, date) : ''; }
+    $('inTime').disabled = timeLocked();
+    $('timeHint').textContent = S.pick && isIso(date) ? timeHelp(S.pick, date) : '프로그램을 고르면 레슨 주기 시간이 채워져요.';
     const dup = S.pick && S.lessons.find((l) => l.programId === S.pick && l.date === date && l.state !== CANCEL);
     const w = $('dupWarn');
     if (dup && !S.dupOk) {
@@ -943,12 +966,12 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const list = ids.map((id, i) => {
       const d = addDays(date, i * 7);
       return { id, date: d, programId: p.id, program: p.name, coach: p.coach, payment: i === 0 && $('inPay').checked, note: $('inNote').value.trim(),
-        source: '앱 입력 ' + today, state: d > today ? PLAN : DONE };
+        source: '앱 입력 ' + today, state: d > today ? PLAN : DONE, time: timeLocked() ? '' : timeOverride(p.id, d, $('inTime').value) };
     });
     await run(async () => {
       const rows = await S.store.add(list);
       list.forEach((l, i) => { l.row = rows[i]; S.lessons.push(l); });
-      $('inPay').checked = false; $('inNote').value = ''; S.dupOk = false; S.repeat = 1;
+      $('inPay').checked = false; $('inNote').value = ''; S.dupOk = false; S.repeat = 1; S.timeKey = null;
       toast(p.name + ' ' + md(date) + (n > 1 ? ' 외 ' + (n - 1) + '회' : '') + (list[0].state === PLAN ? ' 일정 등록' : ' 저장'), n === 1 ? { label: '되돌리기', run: () => removeLesson(list[0], '저장을 취소했어요') } : null);
     });
   }
@@ -1237,6 +1260,16 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   function openEdit(l) {
     let state = l.state;
     const date = el('input', { type: 'date', id: 'edDate', value: l.date });
+    const time = el('input', { type: 'time', id: 'edTime', value: timeOf(l), disabled: timeLocked() });
+    const timeHint = el('div', { class: 'hint', text: timeHelp(l.programId, l.date) });
+    let timeTouched = false;
+    time.addEventListener('input', () => { timeTouched = true; });
+    // 날짜를 다른 요일로 바꾸면, 시간을 따로 정하지 않은 레슨은 새 요일의 주기 시간을 보여 준다
+    date.addEventListener('change', () => {
+      if (!isIso(date.value)) return;
+      if (!timeTouched && !l.time) time.value = slotTime(l.programId, date.value);
+      timeHint.textContent = timeHelp(l.programId, date.value);
+    });
     const pay = el('input', { type: 'checkbox', id: 'edPay', 'aria-label': '결제' }); pay.checked = l.payment;
     const note = el('input', { type: 'text', id: 'edNote', value: l.note });
     const confirmBox = el('div', { class: 'warn', hidden: true },
@@ -1247,7 +1280,10 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     openSheet(
       el('h3', { text: l.program }),
       el('div', { class: 'hint', text: [l.id, timeOf(l) && WEEK[dow(l.date)] + ' ' + timeOf(l), l.coach, l.source].filter(Boolean).join(' · ') }),
-      el('div', { class: 'field' }, el('label', { for: 'edDate', text: '날짜' }), date),
+      el('div', { class: 'two' },
+        el('div', { class: 'field' }, el('label', { for: 'edDate', text: '날짜' }), date),
+        el('div', { class: 'field' }, el('label', { for: 'edTime', text: '시간' }), time)),
+      timeHint,
       el('div', { class: 'field' }, el('span', { class: 'lab', text: '진행' }), segControl([[DONE, '완료'], [PLAN, '예정'], [CANCEL, '사정상 취소']], state, (v) => { state = v; })),
       el('div', { class: 'card toggle' }, el('div', { class: 'lab', text: '결제' }), el('label', { class: 'switch' }, pay, el('span'))),
       el('div', { class: 'field' }, el('label', { for: 'edNote', text: '메모' }), note),
@@ -1257,7 +1293,8 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         closeBtn(),
         el('button', { type: 'button', class: 'primary', text: '저장', onclick: () => {
           if (!isIso(date.value)) return;
-          const next = { ...l, date: date.value, payment: pay.checked, note: note.value.trim(), state };
+          const t = timeLocked() ? l.time : (timeTouched || l.time) ? timeOverride(l.programId, date.value, time.value) : '';
+          const next = { ...l, date: date.value, payment: pay.checked, note: note.value.trim(), state, time: t || '' };
           closeSheet();
           run(async () => { await S.store.update(next); Object.assign(l, next); toast('수정했어요'); });
         } })));
@@ -1300,14 +1337,17 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     drawSw();
     let slots = (c.slots || []).map((x) => ({ ...x }));
     const slotBox = el('div', { class: 'slots' });
-    const drawSlots = () => slotBox.replaceChildren(
+    const drawSlots = () => {
+      if (!slots.length) slots.push({ dow: null, time: '' });
+      slotBox.replaceChildren(
       ...slots.map((x, i) => {
-        const day = el('select', { 'aria-label': '요일' }, ...[1, 2, 3, 4, 5, 6, 0].map((d) => el('option', { value: d, text: WEEK[d] + '요일' })));
-        day.value = String(x.dow); day.addEventListener('change', () => { x.dow = +day.value; });
+        const day = el('select', { 'aria-label': '요일' }, el('option', { value: '', text: '요일 선택' }), ...[1, 2, 3, 4, 5, 6, 0].map((d) => el('option', { value: d, text: WEEK[d] + '요일' })));
+        day.value = x.dow == null ? '' : String(x.dow); day.addEventListener('change', () => { x.dow = day.value === '' ? null : +day.value; });
         const tm = el('input', { type: 'time', value: x.time || '', 'aria-label': '시간' }); tm.addEventListener('input', () => { x.time = tm.value; });
         return el('div', { class: 'slot' }, day, tm, el('button', { type: 'button', class: 'iconbtn', 'aria-label': '이 요일 빼기', text: '✕', onclick: () => { slots.splice(i, 1); drawSlots(); } }));
       }),
-      el('button', { type: 'button', class: 'linkbtn', text: '＋ 요일 추가', onclick: () => { slots.push({ dow: 3, time: '19:00' }); drawSlots(); } }));
+      el('button', { type: 'button', class: 'linkbtn', text: '＋ 요일 추가', onclick: () => { slots.push({ dow: null, time: '' }); drawSlots(); } }));
+    };
     drawSlots();
     let weeks = 4;
     const genBox = isNew ? null : el('div', { class: 'card', style: 'display:grid;gap:10px' },
@@ -1320,11 +1360,13 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       const nm = name.value.trim(), cy = cycle.value ? Math.round(+cycle.value) : null;
       if (!nm) { err.textContent = '이름을 입력해 주세요.'; err.hidden = false; return; }
       if (cy != null && !(cy >= 1 && cy <= 99)) { err.textContent = '결제 주기는 1~99 사이 숫자로 입력해 주세요.'; err.hidden = false; return; }
-      if (gen && !slots.length) { err.textContent = '일정을 만들려면 레슨 요일을 먼저 추가해 주세요.'; err.hidden = false; return; }
+      const filled = slots.filter((x) => x.dow != null);
+      if (slots.some((x) => x.dow == null && x.time)) { err.textContent = '레슨 주기에 시간만 있고 요일이 없는 줄이 있어요. 요일을 골라 주세요.'; err.hidden = false; return; }
+      if (gen && !filled.length) { err.textContent = '일정을 만들려면 레슨 요일을 먼저 골라 주세요.'; err.hidden = false; return; }
       const parts = splitName(nm);
       const id = isNew ? 'P' + pad(S.programs.reduce((m, x) => Math.max(m, parseInt(x.id.slice(1), 10) || 0), 0) + 1) : p.id;
       const prog = { ...(p || {}), id, name: nm, sport: parts.sport, detail: parts.detail, student: student.value.trim(), coach: coach.value.trim(), memo: memo.value.trim(), status };
-      const cleanSlots = slots.filter((x, i, a) => a.findIndex((y) => +y.dow === +x.dow) === i).map((x) => ({ dow: +x.dow, time: x.time || '' }));
+      const cleanSlots = filled.filter((x, i, a) => a.findIndex((y) => +y.dow === +x.dow) === i).map((x) => ({ dow: +x.dow, time: x.time || '' }));
       const nextSettings = { ...S.settings, programs: { ...S.settings.programs, [id]: { cycle: cy, color, short: short.value.trim(), slots: cleanSlots } } };
       closeSheet();
       run(async () => {

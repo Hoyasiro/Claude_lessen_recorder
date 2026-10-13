@@ -79,6 +79,7 @@ var APP = {
   BEFORE_HOURS: 3,               // 당일 알림: 레슨 시작 몇 시간 전
   TICK_MINUTES: 15
 };
+var API_VERSION = 5; // 5: lessons M열(레슨별 시간)
 var TRIGGER_VER = '2'; // 트리거 구성이 바뀌면 올린다 → 다음 요청 때 자동으로 다시 만든다
 var PLAN = '예정', CANCEL = '취소', DONE = '완료';
 function props_() { return PropertiesService.getScriptProperties(); }
@@ -159,7 +160,7 @@ function doGet(e) {
     b.token = q.token;
     return out(run_(b));
   }
-  return out({ ok: true, version: 4 });
+  return out({ ok: true, version: API_VERSION });
 }
 function doPost(e) {
   var body = {};
@@ -197,19 +198,20 @@ function handle_(b) {
 }
 function load_() {
   var ss = db_();
-  var lessons = ss.getSheetByName(CONFIG.TABS.LESSONS).getRange('A:L').getDisplayValues();
+  var lessons = ss.getSheetByName(CONFIG.TABS.LESSONS).getRange('A:M').getDisplayValues();
   var programs = ss.getSheetByName(CONFIG.TABS.PROGRAMS).getRange('A:L').getDisplayValues();
   var cut = function (rows) { var last = 0; rows.forEach(function (r, i) { if (r[0]) last = i + 1; }); return rows.slice(0, last); };
   var raw = tab_(APP.CONFIG_TAB).getRange('A1').getValue();
   var settings; try { settings = JSON.parse(raw || '{}'); } catch (err) { settings = {}; }
   if (!settings.programs) settings.programs = {};
-  return { lessons: cut(lessons), programs: cut(programs), settings: settings };
+  return { lessons: cut(lessons), programs: cut(programs), settings: settings, version: API_VERSION };
 }
 function writeLessonRow_(sh, row, l) {
   sh.getRange(row, 1, 1, 2).setValues([[l.id, l.date]]);
   sh.getRange(row, 4, 1, 2).setValues([[l.programId, l.program]]);
   sh.getRange(row, 7, 1, 3).setValues([[l.coach || '', !!l.payment, l.note || '']]);
-  sh.getRange(row, 11, 1, 2).setValues([[l.source || '', l.state || DONE]]);
+  sh.getRange(row, 13).setNumberFormat('@'); // '18:00'이 시각 값으로 바뀌지 않게
+  sh.getRange(row, 11, 1, 3).setValues([[l.source || '', l.state || DONE, l.time || '']]);
   sh.getRange(row, 2).setNumberFormat('yyyy-mm-dd');
 }
 function addLessons_(list) {
@@ -257,6 +259,10 @@ function unsubscribe_(endpoint) {
   return { ok: true };
 }
 function nowKst_() { return Utilities.formatDate(new Date(), CONFIG.TZ, "yyyy-MM-dd'T'HH:mm"); }
+function normTime_(v) {
+  var m = /^(\d{1,2}):(\d{2})/.exec(String(v || '').trim());
+  return m ? ('0' + m[1]).slice(-2) + ':' + m[2] : '';
+}
 function minusHours_(hm, h) {
   var m = Math.max(0, +hm.slice(0, 2) * 60 + +hm.slice(3, 5) - h * 60);
   return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2);
@@ -270,7 +276,7 @@ function plannedOn_(ctx, iso) {
   var dw = new Date(iso + 'T00:00:00Z').getUTCDay(), progs = ctx.data.settings.programs;
   return ctx.data.lessons.slice(1).filter(function (r) { return r[1] === iso && r[11] === PLAN; }).map(function (r) {
     var s = ((progs[r[3]] || {}).slots || []).filter(function (x) { return +x.dow === dw; })[0];
-    return { id: r[0], time: (s && s.time) || '',
+    return { id: r[0], time: normTime_(r[12]) || (s && s.time) || '',
       text: r[4] + (ctx.student[r[3]] ? ' (' + ctx.student[r[3]] + ')' : '') + (r[7] === 'TRUE' ? ' · 결제' : '') };
   }).sort(function (a, b) { return (a.time || '99').localeCompare(b.time || '99'); });
 }

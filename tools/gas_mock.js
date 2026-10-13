@@ -55,8 +55,8 @@ function makeDb(snapshot) {
   const student = (id) => (id === 'P07' ? '엄마아빠' : id === 'P11' ? '엄마' : '준희');
   const programs = new Sheet('programs', [['프로그램ID', '프로그램', '종목', '세부', '대상', '코치', '메모', '상태', '첫 레슨', '마지막 레슨', '레슨 수', '결제 횟수']]
     .concat(r.programs.map((p) => [p.program_id, p.program, p.sport, p.detail, student(p.program_id), p.coach, p.memo, status[p.program_id] || '종료', '', '', '', ''])));
-  const lessons = new Sheet('lessons', [['레슨ID', '날짜', '요일', '프로그램ID', '프로그램', '대상', '코치', '결제', '메모', '상태', '원본셀', '진행']]
-    .concat(r.lessons.map((l) => [l.lesson_id, l.date, '', l.program_id, l.program, '', l.coach, l.payment, l.note, '', l.source_cell, '완료'])));
+  const lessons = new Sheet('lessons', [['레슨ID', '날짜', '요일', '프로그램ID', '프로그램', '대상', '코치', '결제', '메모', '상태', '원본셀', '진행', '시간']]
+    .concat(r.lessons.map((l) => [l.lesson_id, l.date, '', l.program_id, l.program, '', l.coach, l.payment, l.note, '', l.source_cell, '완료', ''])));
   // 시트 수식(요일·대상·상태) 흉내
   const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
   const progRow = (id) => programs.rows.find((x) => x[0] === id) || [];
