@@ -1506,8 +1506,8 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
       // 종료한 프로그램의 마지막 주기는 마지막 레슨에서 끝난다(다음 결제가 없어 평균에는 넣지 않는다)
       const ended = e == null && isEnded(p), stop = end || (ended ? dn[dn.length - 1].date : todayIso());
       return { start, end: end || (ended ? stop : null), open: e == null && !ended, ended, count,
-        // 결제 주기(회)의 1.5배를 넘으면 결제 표시가 빠졌을 가능성이 커 평균에서 뺀다
-        suspect: e != null && setN > 0 && count > setN * 1.5,
+        // 지금 결제 주기(회)의 1.5배를 넘으면 다른 결제 단위(예: 예전 20회권)로 본다 → 할부 참고 평균에서만 뺀다
+        otherUnit: e != null && setN > 0 && count > setN * 1.5,
         cancels: mine.filter((l) => l.state === CANCEL && l.date >= start && (!end || l.date < end)).length,
         months: monthsBetween(start, stop) };
     });
@@ -1517,30 +1517,33 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const list = progs.map((p) => ({ p, cy: payCycles(p) })).filter((x) => x.cy.length);
     if (!list.length) { box.append(el('div', { class: 'empty', text: '결제 기록이 있는 프로그램이 없어요. 결제한 레슨에 결제 표시를 하면 여기에 쌓여요.' })); return; }
     list.forEach(({ p, cy }) => {
-      const closed = cy.filter((c) => !c.open && !c.ended && !c.suspect), cur = cy.find((c) => c.open);
-      const skipped = cy.filter((c) => c.suspect).length;
-      const avg = closed.length ? closed.reduce((a, c) => a + c.months, 0) / closed.length : null;
-      const avgCnt = closed.length ? closed.reduce((a, c) => a + c.count, 0) / closed.length : null;
-      const ms = closed.map((c) => c.months), last = cy.filter((c) => !c.open && !c.ended).pop();
+      const mean = (a, f) => (a.length ? a.reduce((x, c) => x + f(c), 0) / a.length : null);
+      const closed = cy.filter((c) => !c.open && !c.ended), cur = cy.find((c) => c.open);
+      const unit = closed.filter((c) => !c.otherUnit), other = closed.filter((c) => c.otherUnit);
+      const avg = mean(closed, (c) => c.months), avgCnt = mean(closed, (c) => c.count);
+      // 할부 참고는 지금 결제 단위의 주기로만 (다른 단위만 있으면 전체 평균)
+      const unitAvg = mean(unit, (c) => c.months), unitCnt = mean(unit, (c) => c.count);
+      const tipAvg = unitAvg != null ? unitAvg : avg, tipN = unitAvg != null ? unit.length : closed.length;
+      const ms = closed.map((c) => c.months), last = closed[closed.length - 1];
       const top = Math.max(...cy.map((c) => c.months), 0.1);
       // 진행 중인 주기: 결제 주기(회) 설정, 없으면 평균 레슨 수로 남은 기간을 어림한다
       const cycleN = +conf(p.id).cycle || (avgCnt ? Math.round(avgCnt) : 0);
-      const perLesson = avg && avgCnt ? avg / avgCnt : cur && cur.count ? cur.months / cur.count : 0;
+      const perLesson = unitAvg && unitCnt ? unitAvg / unitCnt : avg && avgCnt ? avg / avgCnt : cur && cur.count ? cur.months / cur.count : 0;
       const row = (c) => el('div', { class: 'pcy' + (c.open ? ' open' : '') },
         el('span', { class: 'd', text: ymd(c.start) + ' ~ ' + (c.open ? '진행 중' : ymd(c.end) + (c.ended ? ' (종료)' : '')) }),
         el('span', { class: 'v' }, el('b', { text: c.open ? fmtM(c.months) + '째' : fmtM(c.months) }), ' · ' + c.count + '회' + (c.cancels ? ' · 취소 ' + c.cancels : '')),
         el('span', { class: 'track' }, el('i', { style: 'width:' + Math.min(100, (c.months / top) * 100) + '%' }), avg ? el('s', { style: 'left:' + Math.min(100, (avg / top) * 100) + '%' }) : null),
-        c.suspect ? el('span', { class: 'fc', text: '결제 주기보다 레슨이 많아요. 결제 표시가 빠졌을 수 있어 평균에서 뺐어요.' }) : null,
+        c.otherUnit ? el('span', { class: 'fc', text: '지금 결제 단위(' + cycleN + '회)와 다른 주기예요. 전체 평균에는 넣고, 할부 참고에서만 뺐어요.' }) : null,
         c.open && cycleN && c.count < cycleN && perLesson ? el('span', { class: 'fc', text: '남은 ' + (cycleN - c.count) + '회 · 지금 속도면 이 주기는 약 ' + fmtM(c.months + (cycleN - c.count) * perLesson) + ' 걸려요' }) : null);
       const shown = S.payMore && S.payMore[p.id] ? cy : cy.slice(-6);
       box.append(el('div', { class: 'pstat', style: '--pc:' + colorVar(p.id) },
         el('div', { class: 'top' }, el('b', { text: p.name }), el('span', { class: 'state' + (p.status === '진행중' ? ' plan' : ''), text: '결제 ' + cy.length + '회' })),
         el('div', { class: 'grid4' },
-          el('div', null, el('small', { text: '평균 소모' }), el('span', { text: avg ? fmtM(avg) : '-' })),
           el('div', null, el('small', { text: '지난 주기' }), el('span', { text: last ? fmtM(last.months) : '-' })),
+          el('div', null, el('small', { text: '전체 평균' }), el('span', { text: avg ? fmtM(avg) : '-' })),
           el('div', null, el('small', { text: '최단~최장' }), el('span', { text: ms.length ? Math.min(...ms).toFixed(1) + '~' + Math.max(...ms).toFixed(1) : '-' })),
           el('div', null, el('small', { text: '주기당 레슨' }), el('span', { text: avgCnt ? avgCnt.toFixed(1) + '회' : '-' }))),
-        avg ? el('div', { class: 'pay-tip' }, '할부 참고: 한 주기를 평균 ', el('b', { text: fmtM(avg) }), '에 써요. ', el('b', { text: Math.max(1, Math.floor(avg)) + '개월' }), ' 이하 할부면 다음 결제 전에 끝나요.' + (closed.length < 3 ? ' (지난 주기 ' + closed.length + '번 기준)' : '') + (skipped ? ' 결제 표시가 빠진 듯한 주기 ' + skipped + '번은 뺐어요.' : ''))
+        tipAvg ? el('div', { class: 'pay-tip' }, '할부 참고: ' + (other.length && unit.length ? '지금 결제 단위(' + cycleN + '회) 주기는 ' : '한 주기를 ') + '평균 ', el('b', { text: fmtM(tipAvg) }), '에 써요. ', el('b', { text: Math.max(1, Math.floor(tipAvg)) + '개월' }), ' 이하 할부면 다음 결제 전에 끝나요.' + (tipN < 3 ? ' (지난 주기 ' + tipN + '번 기준)' : '') + (other.length && unit.length ? ' 다른 단위로 결제한 주기 ' + other.length + '번(' + other.map((c) => c.count + '회').join(', ') + ')은 여기서만 뺐어요.' : ''))
           : el('div', { class: 'pay-tip', text: isEnded(p) ? '다음 결제 전에 종료해서 평균을 낼 주기가 없어요.' : '아직 끝난 결제 주기가 없어서 평균은 다음 결제 뒤에 나와요.' }),
         el('div', { class: 'pcys' }, ...shown.slice().reverse().map(row)),
         cy.length > 6 ? el('button', { type: 'button', class: 'linkbtn', text: S.payMore && S.payMore[p.id] ? '최근 6번만 보기' : '지난 결제 ' + (cy.length - 6) + '번 더 보기',
