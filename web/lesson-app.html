@@ -420,7 +420,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     </div>
     <div class="card" data-metric="payments">
       <h3>결제 내역</h3>
-      <p class="sub">결제한 레슨부터 다음 결제 전까지가 한 주기 · 기간 선택과 관계없이 전체 기록 · 세로선은 평균</p>
+      <p class="sub">결제한 레슨부터 다음 결제 전까지가 한 주기 · 기간 선택과 관계없이 전체 기록 · 주기를 펼치면 세로선이 평균</p>
       <div class="pay-list" id="payBox"></div>
     </div>
     <div class="card" data-metric="programs">
@@ -711,7 +711,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const S = {
     store: null, mcp: null, programs: [], lessons: [], settings: { programs: {} }, loadedAt: null, loadError: false, busy: false,
     tab: 'cal', settingsOpen: false, pick: null, dupOk: false, repeat: 1,
-    listLimit: 60, calMonth: monthKey(todayIso()), calSel: todayIso(), showEndedSet: false, showQuiet: false, payMore: {}
+    listLimit: 60, calMonth: monthKey(todayIso()), calSel: todayIso(), showEndedSet: false, showQuiet: false, payOpen: {}
   };
   const $ = (id) => document.getElementById(id);
   const el = (tag, attrs, ...kids) => {
@@ -1519,7 +1519,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         el('span', { class: 'track' }, el('i', { style: 'width:' + Math.min(100, (c.months / top) * 100) + '%' }), avg ? el('s', { style: 'left:' + Math.min(100, (avg / top) * 100) + '%' }) : null),
         c.otherUnit ? el('span', { class: 'fc', text: '지금 결제 단위(' + cycleN + '회)와 다른 주기예요. 전체 평균에는 넣고, 할부 참고에서만 뺐어요.' }) : null,
         c.open && cycleN && c.count < cycleN && perLesson ? el('span', { class: 'fc', text: '남은 ' + (cycleN - c.count) + '회 · 지금 속도면 이 주기는 약 ' + fmtM(c.months + (cycleN - c.count) * perLesson) + ' 걸려요' }) : null);
-      const shown = S.payMore && S.payMore[p.id] ? cy : cy.slice(-6);
+      const open = !!S.payOpen[p.id];
       box.append(el('div', { class: 'pstat', style: '--pc:' + colorVar(p.id) },
         el('div', { class: 'top' }, el('b', { text: p.name }), el('span', { class: 'state' + (p.status === '진행중' ? ' plan' : ''), text: '결제 ' + cy.length + '회' })),
         el('div', { class: 'grid4' },
@@ -1529,9 +1529,10 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
           el('div', null, el('small', { text: '주기당 레슨' }), el('span', { text: avgCnt ? avgCnt.toFixed(1) + '회' : '-' }))),
         tipAvg ? el('div', { class: 'pay-tip' }, '할부 참고: ' + (other.length && unit.length ? '지금 결제 단위(' + cycleN + '회) 주기는 ' : '한 주기를 ') + '평균 ', el('b', { text: fmtM(tipAvg) }), '에 써요. ', el('b', { text: Math.max(1, Math.floor(tipAvg)) + '개월' }), ' 이하 할부면 다음 결제 전에 끝나요.' + (tipN < 3 ? ' (지난 주기 ' + tipN + '번 기준)' : '') + (other.length && unit.length ? ' 다른 단위로 결제한 주기 ' + other.length + '번(' + other.map((c) => c.count + '회').join(', ') + ')은 여기서만 뺐어요.' : ''))
           : el('div', { class: 'pay-tip', text: isEnded(p) ? '다음 결제 전에 종료해서 평균을 낼 주기가 없어요.' : '아직 끝난 결제 주기가 없어서 평균은 다음 결제 뒤에 나와요.' }),
-        el('div', { class: 'pcys' }, ...shown.slice().reverse().map(row)),
-        cy.length > 6 ? el('button', { type: 'button', class: 'linkbtn', text: S.payMore && S.payMore[p.id] ? '최근 6번만 보기' : '지난 결제 ' + (cy.length - 6) + '번 더 보기',
-          onclick: () => { S.payMore = { ...(S.payMore || {}), [p.id]: !(S.payMore && S.payMore[p.id]) }; renderStats(); } }) : null));
+        // 주기 목록은 접어 두고 눌러서 펼친다
+        el('button', { type: 'button', class: 'linkbtn', 'aria-expanded': String(open), text: open ? '결제 주기 접기' : '결제 주기 ' + cy.length + '개 펼치기',
+          onclick: () => { S.payOpen = { ...S.payOpen, [p.id]: !open }; renderStats(); } }),
+        open ? el('div', { class: 'pcys' }, ...cy.slice().reverse().map(row)) : null));
     });
   }
   function statPrograms({ months, from, progs, pg }) {
