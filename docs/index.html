@@ -288,6 +288,19 @@ input[type="date"], input[type="time"], input[type="text"], input[type="number"]
 .spark i.zero { background: var(--line); }
 .cancel-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 6px 0; border-top: 1px solid var(--line); }
 .cancel-row:first-child { border-top: 0; }
+.pay-list { display: grid; gap: 10px; }
+.pay-tip { font-size: 12px; color: var(--ink-2); background: var(--pay-soft); border-radius: 8px; padding: 6px 10px; }
+.pay-tip b { color: var(--pay); }
+.pcys { display: grid; gap: 8px; }
+.pcy { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pcy .d { color: var(--ink-2); }
+.pcy .v { text-align: right; }
+.pcy .v b { font-size: 13px; }
+.pcy .track { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--line); position: relative; }
+.pcy .track i { display: block; height: 100%; border-radius: 3px; background: var(--pc, var(--c0)); }
+.pcy.open .track i { opacity: .45; }
+.pcy .track s { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink-2); border-radius: 1px; }
+.pcy .fc { grid-column: 1 / -1; color: var(--muted); }
 
 .heat-wrap { overflow-x: auto; padding-bottom: 4px; }
 .heat { display: grid; grid-template-columns: 22px auto; column-gap: 4px; width: max-content; }
@@ -420,6 +433,11 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     <div class="card cycle-card" data-metric="cycle">
       <h3>결제 후 진행 회차</h3>
       <div class="cycle" id="cycleBox"></div>
+    </div>
+    <div class="card" data-metric="payments">
+      <h3>결제 내역</h3>
+      <p class="sub">결제한 레슨부터 다음 결제 전까지가 한 주기 · 기간 선택과 관계없이 전체 기록 · 세로선은 평균</p>
+      <div class="pay-list" id="payBox"></div>
     </div>
     <div class="card" data-metric="programs">
       <h3>프로그램별 통계</h3>
@@ -709,7 +727,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   const S = {
     store: null, mcp: null, programs: [], lessons: [], settings: { programs: {} }, loadedAt: null, loadError: false, busy: false,
     tab: 'cal', settingsOpen: false, pick: null, dupOk: false, repeat: 1,
-    listLimit: 60, calMonth: monthKey(todayIso()), calSel: todayIso(), showEndedSet: false, showQuiet: false
+    listLimit: 60, calMonth: monthKey(todayIso()), calSel: todayIso(), showEndedSet: false, showQuiet: false, payMore: {}
   };
   const $ = (id) => document.getElementById(id);
   const el = (tag, attrs, ...kids) => {
@@ -1392,11 +1410,18 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
 
   // ---------- 통계 ----------
   const METRICS = [
-    ['overview', '요약'], ['cycle', '결제 후 회차'], ['programs', '프로그램별 통계'], ['monthly', '월별 레슨 수'], ['daily', '일별 활동'],
+    ['overview', '요약'], ['cycle', '결제 후 회차'], ['payments', '결제 내역'], ['programs', '프로그램별 통계'], ['monthly', '월별 레슨 수'], ['daily', '일별 활동'],
     ['progbar', '프로그램별 막대'], ['dow', '요일별'], ['cancel', '취소 현황']
   ];
-  let picked = ['overview', 'cycle', 'programs', 'monthly', 'daily'];
-  try { const v = JSON.parse(localStorage.getItem('lesson-metrics') || 'null'); if (Array.isArray(v)) picked = v.filter((k) => METRICS.some(([m]) => m === k)); } catch (e) {}
+  const DEFAULT_PICKS = ['overview', 'cycle', 'payments', 'programs', 'monthly', 'daily'];
+  let picked = DEFAULT_PICKS.slice();
+  // 저장해 둔 선택은 유지하고, 그 뒤에 새로 생긴 통계는 기본 항목이면 켜 둔다
+  try {
+    const v = JSON.parse(localStorage.getItem('lesson-metrics') || 'null');
+    const seen = JSON.parse(localStorage.getItem('lesson-metrics-seen') || 'null') || ['overview', 'cycle', 'programs', 'monthly', 'daily', 'progbar', 'dow', 'cancel'];
+    if (Array.isArray(v)) picked = METRICS.map(([m]) => m).filter((m) => v.includes(m) || (!seen.includes(m) && DEFAULT_PICKS.includes(m)));
+    localStorage.setItem('lesson-metrics-seen', JSON.stringify(METRICS.map(([m]) => m)));
+  } catch (e) {}
   function renderPicks() {
     $('metricPicks').replaceChildren(...METRICS.map(([k, t]) => el('button', { type: 'button', class: 'chip', 'aria-pressed': String(picked.includes(k)), text: t, onclick: () => {
       picked = picked.includes(k) ? picked.filter((x) => x !== k) : METRICS.map(([m]) => m).filter((m) => m === k || picked.includes(m));
@@ -1427,6 +1452,7 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
     const F = statFilter();
     if (picked.includes('overview')) statOverview(F);
     if (picked.includes('cycle')) statCycle(F);
+    if (picked.includes('payments')) statPayments(F);
     if (picked.includes('programs')) statPrograms(F);
     if (picked.includes('monthly')) monthlyChart(F.months, F.rows);
     if (picked.includes('daily')) statDaily(F);
@@ -1463,6 +1489,62 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         el('span', { class: 'n', text: p.name }),
         el('span', { class: 'c' }, el('div', { text: c }), p.sincePay != null ? punch(p.sincePay, p.cycle) : null),
         meta));
+    });
+  }
+  // 결제 주기: 결제한 (완료) 레슨부터 다음 결제 레슨 전까지. 소모 기간은 결제일 → 다음 결제일
+  const MONTH_DAYS = 365.25 / 12;
+  const monthsBetween = (a, b) => daysBetween(a, b) / MONTH_DAYS;
+  const fmtM = (m) => m.toFixed(1) + '개월';
+  const ymd = (iso) => iso.slice(2).replace(/-/g, '.');
+  function payCycles(p) {
+    const pid = p.id, setN = +conf(pid).cycle || 0;
+    const mine = S.lessons.filter((l) => l.programId === pid).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+    const dn = mine.filter(done), starts = [];
+    dn.forEach((l, i) => { if (l.payment) starts.push(i); });
+    return starts.map((s, k) => {
+      const e = starts[k + 1], start = dn[s].date, end = e == null ? null : dn[e].date, count = (e == null ? dn.length : e) - s;
+      // 종료한 프로그램의 마지막 주기는 마지막 레슨에서 끝난다(다음 결제가 없어 평균에는 넣지 않는다)
+      const ended = e == null && isEnded(p), stop = end || (ended ? dn[dn.length - 1].date : todayIso());
+      return { start, end: end || (ended ? stop : null), open: e == null && !ended, ended, count,
+        // 결제 주기(회)의 1.5배를 넘으면 결제 표시가 빠졌을 가능성이 커 평균에서 뺀다
+        suspect: e != null && setN > 0 && count > setN * 1.5,
+        cancels: mine.filter((l) => l.state === CANCEL && l.date >= start && (!end || l.date < end)).length,
+        months: monthsBetween(start, stop) };
+    });
+  }
+  function statPayments({ progs }) {
+    const box = $('payBox'); box.replaceChildren();
+    const list = progs.map((p) => ({ p, cy: payCycles(p) })).filter((x) => x.cy.length);
+    if (!list.length) { box.append(el('div', { class: 'empty', text: '결제 기록이 있는 프로그램이 없어요. 결제한 레슨에 결제 표시를 하면 여기에 쌓여요.' })); return; }
+    list.forEach(({ p, cy }) => {
+      const closed = cy.filter((c) => !c.open && !c.ended && !c.suspect), cur = cy.find((c) => c.open);
+      const skipped = cy.filter((c) => c.suspect).length;
+      const avg = closed.length ? closed.reduce((a, c) => a + c.months, 0) / closed.length : null;
+      const avgCnt = closed.length ? closed.reduce((a, c) => a + c.count, 0) / closed.length : null;
+      const ms = closed.map((c) => c.months), last = cy.filter((c) => !c.open && !c.ended).pop();
+      const top = Math.max(...cy.map((c) => c.months), 0.1);
+      // 진행 중인 주기: 결제 주기(회) 설정, 없으면 평균 레슨 수로 남은 기간을 어림한다
+      const cycleN = +conf(p.id).cycle || (avgCnt ? Math.round(avgCnt) : 0);
+      const perLesson = avg && avgCnt ? avg / avgCnt : cur && cur.count ? cur.months / cur.count : 0;
+      const row = (c) => el('div', { class: 'pcy' + (c.open ? ' open' : '') },
+        el('span', { class: 'd', text: ymd(c.start) + ' ~ ' + (c.open ? '진행 중' : ymd(c.end) + (c.ended ? ' (종료)' : '')) }),
+        el('span', { class: 'v' }, el('b', { text: c.open ? fmtM(c.months) + '째' : fmtM(c.months) }), ' · ' + c.count + '회' + (c.cancels ? ' · 취소 ' + c.cancels : '')),
+        el('span', { class: 'track' }, el('i', { style: 'width:' + Math.min(100, (c.months / top) * 100) + '%' }), avg ? el('s', { style: 'left:' + Math.min(100, (avg / top) * 100) + '%' }) : null),
+        c.suspect ? el('span', { class: 'fc', text: '결제 주기보다 레슨이 많아요. 결제 표시가 빠졌을 수 있어 평균에서 뺐어요.' }) : null,
+        c.open && cycleN && c.count < cycleN && perLesson ? el('span', { class: 'fc', text: '남은 ' + (cycleN - c.count) + '회 · 지금 속도면 이 주기는 약 ' + fmtM(c.months + (cycleN - c.count) * perLesson) + ' 걸려요' }) : null);
+      const shown = S.payMore && S.payMore[p.id] ? cy : cy.slice(-6);
+      box.append(el('div', { class: 'pstat', style: '--pc:' + colorVar(p.id) },
+        el('div', { class: 'top' }, el('b', { text: p.name }), el('span', { class: 'state' + (p.status === '진행중' ? ' plan' : ''), text: '결제 ' + cy.length + '회' })),
+        el('div', { class: 'grid4' },
+          el('div', null, el('small', { text: '평균 소모' }), el('span', { text: avg ? fmtM(avg) : '-' })),
+          el('div', null, el('small', { text: '지난 주기' }), el('span', { text: last ? fmtM(last.months) : '-' })),
+          el('div', null, el('small', { text: '최단~최장' }), el('span', { text: ms.length ? Math.min(...ms).toFixed(1) + '~' + Math.max(...ms).toFixed(1) : '-' })),
+          el('div', null, el('small', { text: '주기당 레슨' }), el('span', { text: avgCnt ? avgCnt.toFixed(1) + '회' : '-' }))),
+        avg ? el('div', { class: 'pay-tip' }, '할부 참고: 한 주기를 평균 ', el('b', { text: fmtM(avg) }), '에 써요. ', el('b', { text: Math.max(1, Math.floor(avg)) + '개월' }), ' 이하 할부면 다음 결제 전에 끝나요.' + (closed.length < 3 ? ' (지난 주기 ' + closed.length + '번 기준)' : '') + (skipped ? ' 결제 표시가 빠진 듯한 주기 ' + skipped + '번은 뺐어요.' : ''))
+          : el('div', { class: 'pay-tip', text: isEnded(p) ? '다음 결제 전에 종료해서 평균을 낼 주기가 없어요.' : '아직 끝난 결제 주기가 없어서 평균은 다음 결제 뒤에 나와요.' }),
+        el('div', { class: 'pcys' }, ...shown.slice().reverse().map(row)),
+        cy.length > 6 ? el('button', { type: 'button', class: 'linkbtn', text: S.payMore && S.payMore[p.id] ? '최근 6번만 보기' : '지난 결제 ' + (cy.length - 6) + '번 더 보기',
+          onclick: () => { S.payMore = { ...(S.payMore || {}), [p.id]: !(S.payMore && S.payMore[p.id]) }; renderStats(); } }) : null));
     });
   }
   function statPrograms({ months, from, progs, pg }) {
