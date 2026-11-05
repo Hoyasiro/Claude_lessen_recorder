@@ -625,7 +625,11 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
   function apiStore(cfg) {
     // 기본은 POST. 브라우저가 POST를 막으면 같은 요청을 GET(?payload=)으로 보낸다.
     // fetch가 막히면 GET(fetch) → JSONP(script 태그) 순서로 내려가고, 한 번 내려간 방식을 계속 쓴다
+    // 한 번 내려간 방식은 이 기기에 기억해 다음에 앱을 열 때도 그대로 쓴다
+    const MODE_KEY = 'lesson-api-mode';
     let mode = 'post';
+    try { const m = JSON.parse(localStorage.getItem(MODE_KEY) || 'null'); if (m && m.api === cfg.api && ['get', 'jsonp'].includes(m.mode)) mode = m.mode; } catch (e) {}
+    const fallTo = (next) => { mode = next; try { localStorage.setItem(MODE_KEY, JSON.stringify({ api: cfg.api, mode })); } catch (e) {} };
     const getUrl = (body, extra) => cfg.api + '?token=' + encodeURIComponent(cfg.token) + (extra || '') + '&payload=' + encodeURIComponent(JSON.stringify(body));
     function check(body, j) {
       if (j.error) throw { code: j.error === 'unauthorized' ? 'unauthorized' : 'api', message: j.error };
@@ -648,17 +652,39 @@ nav.tabs button[aria-selected="true"] { color: var(--accent); }
         document.head.appendChild(sc);
       });
     }
-    async function post(action, extra) {
-      const body = { action, ...(extra || {}) };
+    // 지금 방식으로 한 번 보낸다. 응답을 못 읽으면 다음 방식으로 내려가고 'retry'를 던진다
+    async function attempt(body) {
       if (mode === 'post') {
         try { return await parse(body, await fetch(cfg.api, { method: 'POST', body: JSON.stringify({ token: cfg.token, ...body }) })); }
-        catch (e) { if (e && e.code) throw e; mode = 'get'; }
+        catch (e) { if (e && e.code) throw e; fallTo('get'); throw { code: 'retry' }; }
       }
       if (mode === 'get') {
         try { return await parse(body, await fetch(getUrl(body))); }
-        catch (e) { if (e && e.code) throw e; mode = 'jsonp'; }
+        catch (e) { if (e && e.code) throw e; fallTo('jsonp'); throw { code: 'retry' }; }
       }
       return viaJsonp(body);
+    }
+    // 응답만 막히고 요청은 서버에서 이미 처리됐을 수 있다. 다시 보내면 두 번 반영되는 요청은 시트를 먼저 확인한다
+    const idRows = (values) => { const m = {}; (values || []).forEach((r, i) => { if (i && r && r[0]) m[r[0]] = i + 1; }); return m; };
+    const ALREADY_DONE = {
+      async addLessons(b) {
+        const ids = idRows((await post('load')).lessons), rows = b.list.map((l) => ids[l.id]);
+        if (rows.every(Boolean)) return { rows };
+        if (rows.some(Boolean)) throw { code: 'api', message: '일부만 저장됐어요. 새로고침해서 확인해 주세요.' };
+        return null;
+      },
+      async addProgram(b) { const row = idRows((await post('load')).programs)[b.program.id]; return row ? { row } : null; },
+      async removeLesson(b) { return idRows((await post('load')).lessons)[b.lesson.id] ? null : { ok: true }; }
+    };
+    async function post(action, extra) {
+      const body = { action, ...(extra || {}) };
+      for (;;) {
+        try { return await attempt(body); } catch (e) {
+          if (!e || e.code !== 'retry') throw e;
+          const done = ALREADY_DONE[action] && await ALREADY_DONE[action](body);
+          if (done) return done;
+        }
+      }
     }
     let last = null;
     const store = {

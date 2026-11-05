@@ -4,6 +4,7 @@
  * 시트는 메모리에만 있고 실제 Google 시트에는 아무것도 쓰지 않는다.
  * 사용: node tools/gas_mock.js <snapshot.json> [port]   → http://localhost:<port>/exec 가 웹 앱 주소 역할
  * 환경 변수 BLOCK_POST=1 / BLOCK_GET=1: 응답에서 CORS 헤더를 빼 브라우저가 POST / GET fetch를 막는 상황을 흉내 낸다 (JSONP만 통과)
+ * BLOCK_POST_WRITES=1: 불러오기 POST는 통과시키고 저장 POST의 응답만 막는다 (서버는 처리됨 → 중복 저장 재현용)
  */
 const fs = require('fs');
 const path = require('path');
@@ -127,8 +128,13 @@ if (require.main === module) {
       const h = jsonp ? { 'Content-Type': 'text/javascript' } : process.env.BLOCK_GET ? { 'Content-Type': 'application/json' } : cors;
       res.writeHead(200, h); return res.end(ctx.doGet({ parameter: Object.fromEntries(u.searchParams) }).text);
     }
-    // BLOCK_POST=1: CORS 헤더 없이 응답해 브라우저가 POST를 막는 상황을 흉내 낸다
-    let body = ''; req.on('data', (c) => (body += c)); req.on('end', () => { res.writeHead(200, process.env.BLOCK_POST ? { 'Content-Type': 'application/json' } : cors); res.end(ctx.doPost({ postData: { contents: body } }).text); });
+    // BLOCK_POST=1: CORS 헤더 없이 응답해 브라우저가 POST를 막는 상황을 흉내 낸다 (서버는 요청을 처리한다)
+    // BLOCK_POST_WRITES=1: 불러오기(load)는 통과, 저장 요청만 응답이 막히는 상황
+    let body = ''; req.on('data', (c) => (body += c)); req.on('end', () => {
+      const write = !/"action":"load"/.test(body);
+      res.writeHead(200, process.env.BLOCK_POST || (process.env.BLOCK_POST_WRITES && write) ? { 'Content-Type': 'application/json' } : cors);
+      res.end(ctx.doPost({ postData: { contents: body } }).text);
+    });
   }).listen(+port, () => console.log('mock api on ' + base + '/exec token=' + props.API_TOKEN));
 }
 
