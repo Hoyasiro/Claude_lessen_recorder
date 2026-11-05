@@ -584,10 +584,19 @@ function writeLessonRow_(sh, row, l) {
   sh.getRange(row, 11, 1, 3).setValues([[l.source || '', l.state || DONE, l.time || '']]);
   sh.getRange(row, 2).setNumberFormat('yyyy-mm-dd');
 }
+/** 같은 ID가 이미 있으면 다시 쓰지 않고 그 행을 돌려준다 (같은 요청이 두 번 와도 한 번만 저장) */
+function idRows_(sh) {
+  var ids = sh.getRange('A:A').getDisplayValues(), m = {};
+  ids.forEach(function (r, i) { if (i && r[0]) m[r[0]] = i + 1; });
+  return m;
+}
 function addLessons_(list) {
-  var sh = db_().getSheetByName(CONFIG.TABS.LESSONS), start = lastDataRow_(sh) + 1;
-  (list || []).forEach(function (l, i) { writeLessonRow_(sh, start + i, l); });
-  return (list || []).map(function (_, i) { return start + i; });
+  var sh = db_().getSheetByName(CONFIG.TABS.LESSONS), ids = idRows_(sh), next = lastDataRow_(sh) + 1;
+  return (list || []).map(function (l) {
+    if (ids[l.id]) return ids[l.id];
+    writeLessonRow_(sh, next, l); ids[l.id] = next;
+    return next++;
+  });
 }
 function checkRow_(sh, row, id) {
   if (!row || sh.getRange(row, 1).getDisplayValue() !== id) throw new Error('시트가 바뀌었어요. 새로고침 후 다시 시도해 주세요.');
@@ -602,7 +611,9 @@ function removeLesson_(l) {
 }
 function programCells_(p) { return [p.id, p.name, p.sport || '', p.detail || '', p.student || '', p.coach || '', p.memo || '', p.status || '']; }
 function addProgramRow_(p) {
-  var sh = db_().getSheetByName(CONFIG.TABS.PROGRAMS), r = lastDataRow_(sh) + 1;
+  var sh = db_().getSheetByName(CONFIG.TABS.PROGRAMS), existing = idRows_(sh)[p.id];
+  if (existing) return existing;
+  var r = lastDataRow_(sh) + 1;
   sh.getRange(r, 1, 1, 8).setValues([programCells_(p)]);
   sh.getRange(r, 9, 1, 4).setFormulas([[
     '=IF($K' + r + '=0,"",MINIFS(lessons!$B:$B,lessons!$D:$D,$A' + r + '))',

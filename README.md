@@ -54,6 +54,6 @@
 | `node tools/build_gas.js` | `apps-script/*.js` → `dist/LessonApi.gs`(API 경량판), `dist/LessonApp.gs`(이관 함수 포함 전체) |
 | `node tools/build_pwa.js` | `web/lesson-app.html` → `docs/index.html`. 화면을 바꾸면 `docs/sw.js`의 `SHELL` 버전도 올린다 |
 | `node tools/build_demo.js <snapshot.json> <out.html>` | 시트 없이 도는 로컬 데모 (실제 데이터가 들어가니 커밋 금지) |
-| `node tools/gas_mock.js <snapshot.json> [port]` | Apps Script 코드를 메모리 시트로 돌리는 모의 API. `BLOCK_POST=1` / `BLOCK_GET=1`로 브라우저가 요청을 막는 상황을 흉내 낸다 |
+| `node tools/gas_mock.js <snapshot.json> [port]` | Apps Script 코드를 메모리 시트로 돌리는 모의 API. `BLOCK_POST=1` / `BLOCK_GET=1`로 브라우저가 요청을 막는 상황, `BLOCK_POST_WRITES=1`로 저장 응답만 막히는 상황(중복 저장 재현)을 흉내 낸다 |
 
 `apps-script/Normalize.js`의 이관 변환 로직은 Apps Script와 Node에서 같이 쓴다. 이관(`migrateLegacyLessons`)은 2026-10-08에 한 번 실행했다.
