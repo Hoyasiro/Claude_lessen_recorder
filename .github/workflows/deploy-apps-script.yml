@@ -1,0 +1,60 @@
+name: Deploy Apps Script
+
+# 기본 브랜치에 들어간 커밋의 CI가 성공하면 "레슨 수첩 API" Apps Script 프로젝트에
+# apps-script/dist/LessonApi.gs(Code.gs로)와 apps-script/appsscript.json을 올리고 기존 웹 앱 배포를 새 버전으로 갱신한다(URL 유지).
+# 올리기 전에 현재 프로젝트의 파일 목록과 매니페스트(webapp·oauthScopes 등)를 점검해 다르면 올리지 않고 실패한다.
+# setup()·resetToken()·트리거 만들기는 실행하지 않는다.
+# 1회 설정과 Secret LESSON_DEPLOY는 README의 "Apps Script 자동 배포 (1회 설정)" 참고. Secret이 없으면 배포를 건너뛴다.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: 점검만 하고 올리지 않기(현재 파일 목록·매니페스트 비교)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.repository == 'Hoyasiro/Claude_lessen_recorder' &&
+      ((github.event_name == 'workflow_dispatch' &&
+        github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == github.event.repository.default_branch &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    env:
+      COMMIT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/build_gas.js
+      # 버전을 고정한다. 명령 문법(pull, push -f, list-deployments, update-deployment)은 3.4.1 기준.
+      - run: npm install --global @google/clasp@3.4.1
+      - name: Check, push to Apps Script and update the existing deployment
+        env:
+          LESSON_DEPLOY: ${{ secrets.LESSON_DEPLOY }}
+          CHECK_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.check_only && 'true' || 'false' }}
+          GAS_FILE: apps-script/dist/LessonApi.gs
+          MANIFEST: apps-script/appsscript.json
+        run: bash scripts/deploy-apps-script.sh
+      - name: Remove credentials
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/apps-script-deploy"
