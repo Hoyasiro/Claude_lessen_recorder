@@ -1,0 +1,48 @@
+name: CI
+
+# 빌드 결과(apps-script/dist, docs/index.html)가 커밋과 같은지, 배포 스크립트 테스트가 통과하는지 확인한다.
+# 기본 브랜치 push에서 성공하면 Deploy Apps Script 워크플로가 이어서 돈다(workflow_run).
+# 기본 브랜치 이름을 적지 않으려고 push는 모든 브랜치에서 돈다.
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build
+        run: |
+          node tools/build_gas.js
+          node tools/build_pwa.js
+      - name: Build output matches the commit
+        run: |
+          if ! git diff --exit-code -- apps-script/dist docs/index.html; then
+            echo "::error::빌드 결과가 커밋과 다릅니다. node tools/build_gas.js / node tools/build_pwa.js 를 실행해 결과까지 커밋해 주세요."
+            exit 1
+          fi
+          untracked=$(git status --porcelain --untracked-files=all -- apps-script/dist docs)
+          if [ -n "$untracked" ]; then
+            echo "$untracked"
+            echo "::error::빌드가 커밋되지 않은 파일을 만들었습니다."
+            exit 1
+          fi
+      - name: Syntax check
+        run: for f in apps-script/*.js tools/*.js; do node --check "$f"; done
+      - name: Tests
+        run: node --test scripts/*.test.js
+      - name: ShellCheck
+        run: shellcheck scripts/*.sh

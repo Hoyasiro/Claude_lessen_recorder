@@ -3,3 +3,5 @@
 preview*.html
 .clasprc.json
 node_modules/
+.clasp.json
+lesson_deploy.txt
